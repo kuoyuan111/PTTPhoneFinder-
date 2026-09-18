@@ -40,6 +40,8 @@ main { width: min(1540px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 24
 }
 
 .eyebrow { color: var(--accent); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.22em; }
+.eyebrow-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.site-version { color: var(--muted); font-size: .74rem; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
 .hero h1 { margin: 12px 0 16px; font-size: clamp(2.6rem, 5vw, 5.4rem); line-height: 0.98; letter-spacing: -0.055em; }
 .hero p { max-width: 700px; margin: 0; color: var(--muted); font-size: 1.08rem; line-height: 1.7; }
 
@@ -128,7 +130,6 @@ tbody tr:hover td { background: #f6fbfa; }
 
 footer { padding: 24px 8px 4px; color: var(--muted); text-align: center; font-size: .78rem; }
 footer p { margin: 0; }
-.build-version { margin-top: 6px !important; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 
 @media (max-width: 980px) {
   main { width: min(100% - 20px, 1540px); padding-top: 22px; }

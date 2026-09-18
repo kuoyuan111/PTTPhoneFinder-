@@ -168,7 +168,10 @@ export default function HomePage() {
     <main>
       <section className="hero">
         <div className="hero-copy">
-          <span className="eyebrow">PTT PHONE FINDER</span>
+          <div className="eyebrow-row">
+            <span className="eyebrow">PTT PHONE FINDER</span>
+            <span className="site-version" aria-label={`網站版本 ${BUILD_VERSION_LABEL}`}>版本 {BUILD_VERSION_LABEL}</span>
+          </div>
           <h1>二手手機搜尋，<br />整理後再看。</h1>
           <p>搜尋 PTT 公開文章，整理價格、容量、顏色、地區與售出狀態。中繼或鏡像資料可能延遲，交易前請確認原文。不使用 AI，也不需要 API Key。</p>
         </div>
@@ -357,7 +360,6 @@ export default function HomePage() {
 
       <footer>
         <p>本工具只整理 PTT 公開文章，不保存搜尋內容。請確認商品資訊並注意交易安全。</p>
-        <p className="build-version" aria-label={`版本 ${BUILD_VERSION_LABEL}`}>版本 {BUILD_VERSION_LABEL}</p>
       </footer>
     </main>
   );
