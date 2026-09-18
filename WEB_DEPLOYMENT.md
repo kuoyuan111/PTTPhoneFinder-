@@ -20,6 +20,104 @@
 
 Vercel CLI 會在本機產生 `.vercel/project.json`，內容是 project/org 識別資訊。`.vercel/` 已加入 `.gitignore`，不應 commit；換電腦時使用 `vercel link` 重新產生即可。Vercel 登入憑證及 Token 也不得放進 repository。
 
+## 每次變更必做：提交、推送、重新部署
+
+這個專案目前尚未連接 Vercel 的 GitHub 自動部署（見上方「目前正式環境」），所以 `git push` 不會自動更新正式網址。其他 AI 或維護者只要有任何已提交變更，不論是程式、測試、文件或部署設定，都必須完成以下完整流程；只建 commit、只 push，或只在本機 build，都不算上線完成。
+
+### 1. 更新前確認範圍與工作樹
+
+```powershell
+git switch main
+git pull --ff-only origin main
+git status -sb
+```
+
+保留使用者既有修改，不使用 `git reset --hard` 或 `git checkout --` 清除工作。確認沒有把 `.env`、token、密碼、`.vercel/` 或其他本機產物列入變更。
+
+### 2. 本機驗證
+
+在 repository 根目錄執行：
+
+```powershell
+npm ci
+npm test
+npm run lint
+npm run build
+npm audit --audit-level=moderate
+git diff --check
+```
+
+`npm run build` 會在建置時由 `scripts/run-next.mjs` 產生 `YYYY.MM.DD-HH:mm:ss` 的台灣時間版本，正式網頁頁尾會顯示該版本。若 build 或測試失敗，先修正並重新執行整組檢查，不得部署未驗證的版本。
+
+### 3. commit 與 push
+
+只 stage 已確認屬於本次工作的檔案，先檢查 staged 清單與 diff，再建立 commit：
+
+```powershell
+git diff --stat
+git diff --check
+git add <已確認的檔案>
+git diff --cached --stat
+git diff --cached --check
+git commit -m "<清楚描述本次變更>"
+git push origin main
+```
+
+推送後確認本機與遠端一致：
+
+```powershell
+git status -sb
+git rev-parse HEAD
+git ls-remote origin refs/heads/main
+```
+
+`git ls-remote` 回傳的 `main` SHA 必須與 `git rev-parse HEAD` 相同。禁止 force push `main`。
+
+### 4. 用 Vercel CLI 建立同一個 production project 的新 deployment
+
+先確認 CLI 登入的是 `kuoyuan111`／`owen123`，並且 `.vercel/project.json` 指向 `ptt-phone-finder`：
+
+```powershell
+$env:NODE_OPTIONS = "--use-system-ca"
+npx --yes vercel@latest whoami
+npx --yes vercel@latest --prod --yes
+```
+
+`NODE_OPTIONS=--use-system-ca` 是公司 Windows 憑證鏈環境需要的設定；必須在同一個 PowerShell 工作階段中設定後再執行 Vercel CLI。首次換電腦且尚未 link 時，先執行：
+
+```powershell
+$env:NODE_OPTIONS = "--use-system-ca"
+npx --yes vercel@latest login
+npx --yes vercel@latest link --project ptt-phone-finder
+```
+
+登入或 link 時選既有的 `owen123` scope 與 `ptt-phone-finder` project，不要建立第二個同名或相似專案。Token 只存於本機 CLI 登入狀態，不要貼到 log、文件、GitHub 或環境檔。
+
+部署成功的 CLI 輸出應同時出現 `READY`、一個 deployment URL，以及：
+
+```text
+Aliased https://ptt-phone-finder.vercel.app
+```
+
+`--prod` 是 production target，`--yes` 讓非互動 AI 維護流程不會停在確認提示。每次執行都會建立新的 deployment；不要用舊 deployment 的 rollback 代替本次變更的重新部署。
+
+### 5. 上線後驗證
+
+```powershell
+$response = Invoke-WebRequest -Uri "https://ptt-phone-finder.vercel.app" -UseBasicParsing
+$response.StatusCode
+$response.Content -match "版本 [0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9]{2}:[0-9]{2}:[0-9]{2}（台灣時間）"
+```
+
+應得到 HTTP `200`，且版本規則比前一次更新。再用少量搜尋確認首頁、搜尋 API、資料來源提示與原文連結可用；不要為驗證大量重複抓取 PTT。必要時可在 Vercel project 的 Deployments 頁確認最新 deployment 的 commit／source 是剛推送的 `main`。
+
+### 失敗時的處理
+
+- `unable to get local issuer certificate` 或 CLI `fetch failed`：先在同一 PowerShell 設定 `$env:NODE_OPTIONS = "--use-system-ca"` 後重試，不能用關閉 TLS 驗證的方式繞過。
+- `Not authorized`：先執行 `npx --yes vercel@latest whoami`；若不是 `kuoyuan111`，重新 `vercel login`，不要把 token 寫入 repository。
+- build 失敗：保留 GitHub 上已推送的 commit，修正後重新跑第 2 步到第 5 步；不能把未通過 build 的 deployment 當成完成。
+- deployment READY 但正式網址仍是舊版：確認 CLI 輸出有 `Aliased ...ptt-phone-finder.vercel.app`，並在 Vercel project 確認 target 是 Production；不要只看 preview URL。
+
 ## 技術架構
 
 - Next.js App Router + React + TypeScript
@@ -71,9 +169,12 @@ npm audit --audit-level=moderate
 
 ### 方式一：Vercel CLI（目前可用）
 
+完整維護順序請遵守本文件上方「每次變更必做：提交、推送、重新部署」；以下是新電腦第一次設定的快速指令。
+
 第一次在新電腦設定：
 
 ```powershell
+$env:NODE_OPTIONS = "--use-system-ca"
 npx --yes vercel@latest login
 npx --yes vercel@latest link --project ptt-phone-finder
 ```
@@ -81,13 +182,7 @@ npx --yes vercel@latest link --project ptt-phone-finder
 登入時選擇 `owen123` scope。確認 `.vercel/project.json` 中的 `projectName` 是 `ptt-phone-finder` 後，部署 production：
 
 ```powershell
-npx --yes vercel@latest --prod --yes
-```
-
-若公司 Windows 憑證鏈造成 `unable to get local issuer certificate`：
-
-```powershell
-$env:NODE_OPTIONS="--use-system-ca"
+$env:NODE_OPTIONS = "--use-system-ca"
 npx --yes vercel@latest --prod --yes
 ```
 
@@ -125,10 +220,14 @@ npm ci
 npm test
 npm run lint
 npm run build
+npm audit --audit-level=moderate
+git diff --check
 git push
+$env:NODE_OPTIONS = "--use-system-ca"
+npx --yes vercel@latest --prod --yes
 ```
 
-不要 force push `main`。若 `git status -sb` 顯示 `main...origin/feature/review-fixes`，代表本機 upstream 設定錯誤；重新執行 `git push -u origin main` 即可改回追蹤 `origin/main`。
+最後仍要依「每次變更必做」的上線後驗證確認 HTTP 200 與頁尾版本。不要 force push `main`。若 `git status -sb` 顯示 `main...origin/feature/review-fixes`，代表本機 upstream 設定錯誤；重新執行 `git push -u origin main` 即可改回追蹤 `origin/main`。
 
 ## 上線後測試
 
