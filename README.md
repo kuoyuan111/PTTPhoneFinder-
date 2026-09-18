@@ -12,7 +12,7 @@
 
 ### 本機啟動網頁版
 
-需要 Node.js 24 或更新版本：
+需要 Node.js 24.x（與 `package.json` 的 engines 設定一致）：
 
 ```powershell
 npm install

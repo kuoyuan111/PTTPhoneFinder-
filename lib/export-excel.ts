@@ -1,9 +1,10 @@
 import type { SearchResult } from "@/lib/types";
+import { articleExcelSerial } from "@/lib/article-time";
 
-function parsedDate(value: string): Date | string {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date;
+function sourceLabel(source: SearchResult["source"]): string {
+  if (source === "jina") return "中繼抓取";
+  if (source === "pttweb") return "延遲鏡像";
+  return "PTT 直連";
 }
 
 export async function buildResultsWorkbook(results: SearchResult[]): Promise<ArrayBuffer> {
@@ -19,7 +20,7 @@ export async function buildResultsWorkbook(results: SearchResult[]): Promise<Arr
     { header: "來源看板", key: "board", width: 16 },
     { header: "資料來源", key: "source", width: 14 },
     { header: "發文時間", key: "publishedAt", width: 22 },
-    { header: "手機型號/命中關鍵字", key: "model", width: 25 },
+    { header: "命中關鍵字", key: "model", width: 25 },
     { header: "容量", key: "storage", width: 13 },
     { header: "價格", key: "price", width: 13 },
     { header: "價格候選", key: "pricesFound", width: 22 },
@@ -36,8 +37,8 @@ export async function buildResultsWorkbook(results: SearchResult[]): Promise<Arr
   for (const result of results) {
     const row = sheet.addRow({
       board: result.board,
-      source: result.source === "jina" ? "即時中繼" : result.source === "pttweb" ? "延遲鏡像" : "PTT 直連",
-      publishedAt: parsedDate(result.publishedAt) || result.listDate,
+      source: sourceLabel(result.source),
+      publishedAt: articleExcelSerial(result.publishedAt, result.url) ?? result.listDate,
       model: result.model,
       storage: result.storage,
       price: result.price,
@@ -87,6 +88,8 @@ export async function downloadResultsExcel(results: SearchResult[]): Promise<voi
   const link = document.createElement("a");
   link.href = url;
   link.download = `PTT手機搜尋_${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}.xlsx`;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }

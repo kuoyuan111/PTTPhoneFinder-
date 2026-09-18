@@ -16,6 +16,8 @@ export interface Article {
   listDate: string;
   publishedAt: string;
   content: string;
+  /** Optional crawler diagnostics; existing consumers may ignore this field. */
+  sourceWarning?: string;
 }
 
 export interface SearchRequest {

@@ -158,6 +158,8 @@ git push
 
 允許的遠端來源直接寫在 `lib/ptt-crawler.ts`；Jina URL 只能由已驗證的 `www.ptt.cc` URL 組成。新增來源時必須同時更新來源白名單、錯誤處理、安全說明與測試，不能接受使用者輸入任意抓取網址。
 
+中繼標頭的官方說明：[Jina Reader README — Using request headers](https://github.com/jina-ai/reader#using-request-headers)。`X-Respond-With: html` 選擇 HTML 輸出，`X-No-Cache: true` 要求略過 Jina 快取；程式自身的短時間快取、來源更新頻率及第三方可用性仍需另外考量。
+
 ## 更新與回復
 
 每次修改後先完成：
@@ -176,14 +178,14 @@ npm audit --audit-level=moderate
 ## 常見問題
 
 - `unable to get local issuer certificate`：在目前 PowerShell 設定 `$env:NODE_OPTIONS="--use-system-ca"` 後重試。
-- Vercel 顯示 PTT HTTP 403：這是預期的雲端出口限制；正常應顯示「Jina Reader 無快取中繼」並取得今天最新文章。只有中繼失敗時才應顯示 PTTweb 延遲鏡像。
+- Vercel 顯示 PTT HTTP 403：可能是雲端出口受到限制，檢查搜尋提示與每筆資料來源。Jina 無快取請求是要求重新抓取來源，不保證第三方永久同步；用文章發文時間及原文確認是否符合需要，不以「今天一定有結果」作為成功條件。PTTweb 必須標示為延遲鏡像。
 - Vercel 無法連接 GitHub repository：確認登入帳號具有 repository 權限，並在 GitHub Vercel App 中授權該 repository。
 - 專案名稱格式錯誤：Vercel project 固定使用小寫 `ptt-phone-finder`。
 - 正式網址沒有更新：確認部署目標是既有 project `owen123/ptt-phone-finder`，並確認 deployment 已標示 `Production`、alias 指向 `ptt-phone-finder.vercel.app`。
 
 ## 安全與流量控制
 
-- 後端只允許連線到 `https://www.ptt.cc` 與備援 `https://www.pttweb.cc`，不接受使用者提供任意網址。
+- 後端只允許連線到 `https://www.ptt.cc`、中繼 `https://r.jina.ai` 與備援 `https://www.pttweb.cc`，不接受使用者提供任意網址。Jina 的目標只能由已驗證的 PTT 網址組成。
 - 看板名稱只接受英數字、底線、句點與連字號。
 - API 會驗證看板、關鍵字、預算及頁數。
 - PTT 請求之間保留延遲，並對暫時性錯誤重試。

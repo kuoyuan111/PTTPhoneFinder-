@@ -1,22 +1,15 @@
 "use client";
 
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useReducer, useState } from "react";
 
+import { formatArticleTimeTaiwan } from "@/lib/article-time";
+import {
+  createSearchRequestGate, DEFAULT_SORT, emptyResultsMessage, emptySearchView,
+  searchViewReducer, selectVisibleResults, validBoardName, validKeyword,
+  type SortKey, type SortState,
+} from "@/lib/search-ui";
 import { downloadResultsExcel } from "@/lib/export-excel";
 import { DEFAULT_BOARDS, type SearchResponse, type SearchResult } from "@/lib/types";
-
-type SortKey =
-  | "board"
-  | "publishedAt"
-  | "model"
-  | "storage"
-  | "price"
-  | "color"
-  | "soldStatus"
-  | "locations"
-  | "title";
-
-type SortState = { key: SortKey; direction: "asc" | "desc" };
 
 function splitValues(value: string): string[] {
   return [...new Set(value.split(/[,，;；\n]+/).map((part) => part.trim()).filter(Boolean))];
@@ -30,30 +23,10 @@ function formatPrice(value: number | null): string {
   return value === null ? "價格未知" : `$${value.toLocaleString("zh-TW")}`;
 }
 
-function formatPublished(value: string, fallback: string): string {
-  if (!value) return fallback || "日期未知";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("zh-TW", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
 function sourceLabel(source: SearchResult["source"]): string {
-  if (source === "jina") return "即時中繼";
+  if (source === "jina") return "中繼抓取";
   if (source === "pttweb") return "延遲鏡像";
   return "PTT 直連";
-}
-
-function sortableValue(result: SearchResult, key: SortKey): string | number {
-  if (key === "price") return result.price ?? Number.MAX_SAFE_INTEGER;
-  if (key === "locations") return result.locations.join("、");
-  return result[key];
 }
 
 export default function HomePage() {
@@ -64,47 +37,23 @@ export default function HomePage() {
   const [locations, setLocations] = useState("");
   const [pages, setPages] = useState(3);
   const [includeSold, setIncludeSold] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [candidateCount, setCandidateCount] = useState(0);
-  const [elapsedMs, setElapsedMs] = useState(0);
+  const [view, dispatch] = useReducer(searchViewReducer, undefined, emptySearchView);
+  const { results, warnings, candidateCount, elapsedMs, status, error, phase: searchPhase } = view;
+  const searching = searchPhase === "searching";
   const [filterText, setFilterText] = useState("");
-  const [sort, setSort] = useState<SortState>({ key: "publishedAt", direction: "desc" });
-  const [status, setStatus] = useState("設定搜尋條件後，按下開始搜尋。");
-  const [error, setError] = useState("");
-  const [searching, setSearching] = useState(false);
+  const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
   const [exporting, setExporting] = useState(false);
-  const abortController = useRef<AbortController | null>(null);
+  const [requests] = useState(createSearchRequestGate);
 
-  const visibleResults = useMemo(() => {
-    const filter = filterText.trim().toLocaleLowerCase();
-    const filtered = filter
-      ? results.filter((result) =>
-          [
-            result.board,
-            result.title,
-            result.model,
-            result.storage,
-            result.color,
-            result.locations.join(" "),
-            result.condition,
-          ]
-            .join(" ")
-            .toLocaleLowerCase()
-            .includes(filter),
-        )
-      : [...results];
+  useEffect(() => {
+    return () => requests.cancel();
+  }, [requests]);
 
-    return filtered.sort((left, right) => {
-      const leftValue = sortableValue(left, sort.key);
-      const rightValue = sortableValue(right, sort.key);
-      const comparison =
-        typeof leftValue === "number" && typeof rightValue === "number"
-          ? leftValue - rightValue
-          : String(leftValue).localeCompare(String(rightValue), "zh-Hant", { numeric: true });
-      return sort.direction === "asc" ? comparison : -comparison;
-    });
-  }, [filterText, results, sort]);
+  const visibleResults = useMemo(
+    () => selectVisibleResults(results, filterText, sort), [filterText, results, sort],
+  );
+
+  function setError(error: string) { dispatch({ type: "error", error }); }
 
   function toggleBoard(board: string) {
     setSelectedBoards((current) =>
@@ -127,23 +76,30 @@ export default function HomePage() {
 
   async function startSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const boards = [...new Set([...selectedBoards, ...splitBoards(customBoards)])].filter((board) =>
-      /^[A-Za-z0-9_.-]+$/.test(board),
+    requests.cancel();
+    dispatch({ type: "clear" });
+    const customBoardValues = splitBoards(customBoards);
+    const invalidCustomBoards = customBoardValues.filter(
+      (board) => !validBoardName(board),
     );
+    if (invalidCustomBoards.length) {
+      setError(`自訂看板名稱無效：${invalidCustomBoards.join("、")}。請以英文字母或數字開頭，限 1–32 個英數字、底線或連字號。`);
+      return;
+    }
+    const boards = [...new Set([...selectedBoards, ...customBoardValues])];
     const keywordValues = splitValues(keywords);
-    if (!boards.length || !keywordValues.length) {
-      setError("請至少選擇一個看板，並輸入一個搜尋關鍵字。");
+    if (boards.length > 6) {
+      setError("最多可搜尋 6 個看板，請移除部分自訂看板。");
+      return;
+    }
+    if (!boards.length || !keywordValues.length || !keywordValues.every(validKeyword)) {
+      setError("請至少選擇一個看板；每個關鍵字需包含英數字或中文字，不能只有標點符號。");
       return;
     }
 
-    const controller = new AbortController();
-    abortController.current = controller;
-    setSearching(true);
-    setError("");
-    setWarnings([]);
-    setResults([]);
-    setCandidateCount(0);
-    setStatus(`正在搜尋 ${boards.length} 個看板，請稍候…`);
+    const controller = requests.start();
+    dispatch({ type: "start", boardCount: boards.length });
+    setFilterText("");
 
     try {
       const response = await fetch("/api/search", {
@@ -159,46 +115,47 @@ export default function HomePage() {
           includeSold,
         }),
       });
-      const data = (await response.json()) as SearchResponse & { error?: string };
+      const data = (await response.json().catch(() => {
+        throw new Error("搜尋服務回應無法讀取，請稍後再試。");
+      })) as SearchResponse & { error?: string };
+      if (!requests.isCurrent(controller)) return;
       if (!response.ok) throw new Error(data.error || `搜尋服務回應 HTTP ${response.status}`);
-      setResults(data.results);
-      setWarnings(data.warnings);
-      setCandidateCount(data.candidateCount);
-      setElapsedMs(data.elapsedMs);
-      setStatus(
-        `搜尋完成：${data.candidateCount} 篇候選文章，顯示 ${data.results.length} 筆結果，耗時 ${(
-          data.elapsedMs / 1000
-        ).toFixed(1)} 秒。`,
-      );
+      dispatch({ type: "complete", data });
     } catch (caught) {
+      if (!requests.isCurrent(controller)) return;
       if (caught instanceof Error && caught.name === "AbortError") {
-        setStatus("搜尋已停止。");
+        dispatch({ type: "stop" });
       } else {
-        setError(caught instanceof Error ? caught.message : "搜尋發生未知錯誤。");
-        setStatus("搜尋失敗，請檢查下方訊息。");
+        dispatch({ type: "fail", error: caught instanceof Error ? caught.message : "搜尋失敗，請稍後再試。" });
       }
     } finally {
-      abortController.current = null;
-      setSearching(false);
+      requests.finish(controller);
     }
   }
 
   function stopSearch() {
-    setStatus("正在停止搜尋…");
-    abortController.current?.abort();
+    requests.cancel();
+    dispatch({ type: "stop" });
   }
 
   async function exportExcel() {
-    if (!results.length) return;
+    if (!visibleResults.length) return;
     setExporting(true);
     setError("");
     try {
-      await downloadResultsExcel(results);
+      await downloadResultsExcel(visibleResults);
     } catch (caught) {
       setError(caught instanceof Error ? `Excel 匯出失敗：${caught.message}` : "Excel 匯出失敗。");
     } finally {
       setExporting(false);
     }
+  }
+
+  function clearResults() {
+    requests.cancel();
+    dispatch({ type: "clear" });
+    setFilterText("");
+    setSort(DEFAULT_SORT);
   }
 
   return (
@@ -207,7 +164,7 @@ export default function HomePage() {
         <div className="hero-copy">
           <span className="eyebrow">PTT PHONE FINDER</span>
           <h1>二手手機搜尋，<br />整理後再看。</h1>
-          <p>直接搜尋 PTT 最新文章，以本機規則整理價格、容量、顏色、地區與售出狀態。不使用 AI，也不需要 API Key。</p>
+          <p>搜尋 PTT 公開文章，整理價格、容量、顏色、地區與售出狀態。中繼或鏡像資料可能延遲，交易前請確認原文。不使用 AI，也不需要 API Key。</p>
         </div>
         <div className="hero-stats" aria-label="服務特色">
           <div><strong>0</strong><span>API Key</span></div>
@@ -232,6 +189,7 @@ export default function HomePage() {
                     type="checkbox"
                     checked={selectedBoards.includes(board)}
                     onChange={() => toggleBoard(board)}
+                    disabled={searching}
                   />
                   <span>{board}</span>
                 </label>
@@ -266,7 +224,7 @@ export default function HomePage() {
                   type="number"
                   min="0"
                   max="10000000"
-                  step="1000"
+                  step="1"
                   value={maxBudget}
                   onChange={(event) => setMaxBudget(event.target.value)}
                   placeholder="留空不限"
@@ -331,16 +289,16 @@ export default function HomePage() {
               placeholder="篩選目前結果"
               aria-label="篩選目前結果"
             />
-            <button className="secondary-button" type="button" onClick={() => setResults([])} disabled={!results.length || searching}>清除</button>
-            <button className="export-button" type="button" onClick={exportExcel} disabled={!results.length || exporting}>
-              {exporting ? "產生中…" : "下載 Excel"}
+            <button className="secondary-button" type="button" onClick={clearResults} disabled={searching || exporting}>清除</button>
+            <button className="export-button" type="button" onClick={exportExcel} disabled={!visibleResults.length || exporting}>
+              {exporting ? "產生中…" : `下載目前 ${visibleResults.length} 筆 Excel`}
             </button>
           </div>
         </div>
 
-        {!!results.length && (
+        {searchPhase === "completed" && (
           <div className="summary-strip">
-            <span><strong>{results.length}</strong> 筆結果</span>
+            <span>顯示 <strong>{visibleResults.length}</strong> / <strong>{results.length}</strong> 筆結果</span>
             <span><strong>{candidateCount}</strong> 篇候選</span>
             <span><strong>{(elapsedMs / 1000).toFixed(1)}</strong> 秒</span>
           </div>
@@ -352,8 +310,8 @@ export default function HomePage() {
               <tr>
                 <th><button onClick={() => changeSort("board")}>{sortLabel("看板", "board")}</button></th>
                 <th>資料來源</th>
-                <th><button onClick={() => changeSort("publishedAt")}>{sortLabel("發文時間", "publishedAt")}</button></th>
-                <th><button onClick={() => changeSort("model")}>{sortLabel("型號", "model")}</button></th>
+                <th><button onClick={() => changeSort("publishedAt")}>{sortLabel("發文時間（台灣）", "publishedAt")}</button></th>
+                <th><button onClick={() => changeSort("model")}>{sortLabel("命中關鍵字", "model")}</button></th>
                 <th><button onClick={() => changeSort("storage")}>{sortLabel("容量", "storage")}</button></th>
                 <th className="number"><button onClick={() => changeSort("price")}>{sortLabel("價格", "price")}</button></th>
                 <th><button onClick={() => changeSort("color")}>{sortLabel("顏色", "color")}</button></th>
@@ -368,7 +326,7 @@ export default function HomePage() {
                 <tr key={result.url}>
                   <td><span className="board-badge">{result.board}</span></td>
                   <td><span className={`source-badge ${result.source ?? "ptt"}`}>{sourceLabel(result.source)}</span></td>
-                  <td className="date-cell">{formatPublished(result.publishedAt, result.listDate)}</td>
+                  <td className="date-cell">{formatArticleTimeTaiwan(result.publishedAt, result.url, result.listDate)}</td>
                   <td><strong>{result.model || "命中關鍵字"}</strong></td>
                   <td>{result.storage || "未知"}</td>
                   <td className="number price" title={result.pricesFound.length ? `候選：${result.pricesFound.join("、")}` : undefined}>
@@ -382,7 +340,9 @@ export default function HomePage() {
                 </tr>
               ))}
               {!visibleResults.length && (
-                <tr><td className="empty-state" colSpan={11}>{searching ? "正在搜尋 PTT…" : results.length ? "目前篩選條件沒有結果。" : "尚未搜尋，結果會顯示在這裡。"}</td></tr>
+                <tr><td className="empty-state" colSpan={11}>
+                  {emptyResultsMessage(searchPhase, results.length)}
+                </td></tr>
               )}
             </tbody>
           </table>

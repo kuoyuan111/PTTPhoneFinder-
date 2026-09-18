@@ -29,12 +29,14 @@ describe("Excel export", () => {
     const ExcelJS = (await import("exceljs")).default;
     const buffer = await buildResultsWorkbook([result]);
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(Buffer.from(buffer));
+    await workbook.xlsx.load(buffer);
     const sheet = workbook.getWorksheet("搜尋結果");
 
     expect(buffer.byteLength).toBeGreaterThan(1_000);
     expect(sheet).toBeDefined();
-    expect(sheet?.getRow(2).getCell(2).value).toBe("即時中繼");
+    expect(sheet?.getRow(2).getCell(2).value).toBe("中繼抓取");
+    expect(sheet?.getRow(1).getCell(4).value).toBe("命中關鍵字");
+    expect(sheet?.getRow(2).getCell(3).value).toEqual(new Date("2026-09-18T08:30:00.000Z"));
     expect(sheet?.getRow(2).getCell(6).value).toBe(27_500);
     expect(sheet?.getRow(2).getCell(13).value).toMatchObject({
       text: "開啟 PTT 原文",

@@ -1,81 +1,26 @@
 import type { Article, SearchResult } from "@/lib/types";
 
 const COLOR_TERMS_CHINESE = [
-  "星光色",
-  "太空灰",
-  "午夜色",
-  "原色鈦金屬",
-  "沙漠色",
-  "自然鈦",
-  "黑鈦",
-  "白鈦",
-  "藍鈦",
-  "黑色",
-  "白色",
-  "金色",
-  "銀色",
-  "銀",
-  "藍色",
-  "紫色",
-  "粉色",
-  "紅色",
-  "綠色",
-  "黃色",
-  "灰色",
-  "橘色",
-  "橙色",
+  "原色鈦金屬", "原色鈦", "星光色", "太空灰", "午夜色", "沙漠鈦金", "沙漠鈦", "沙漠色", "自然鈦", "黑鈦", "白鈦", "藍鈦",
+  "曜石黑", "深空黑", "太空黑", "宇宙黑", "亮黑色", "冰藍色", "冰藍", "薰衣草紫", "玫瑰金", "湖水綠", "午夜藍",
+  "黑色", "白色", "金色", "銀色", "藍色", "紫色", "粉色", "紅色", "綠色", "黃色", "灰色", "橘色", "橙色",
 ];
-
-const COLOR_TERMS_ENGLISH = [
-  "black",
-  "white",
-  "gold",
-  "silver",
-  "blue",
-  "purple",
-  "pink",
-  "red",
-  "green",
-  "yellow",
-  "gray",
-  "grey",
-];
-
-const SOLD_TERMS = [
-  "已售出",
-  "已賣出",
-  "已成交",
-  "交易完成",
-  "已預訂",
-  "已預定",
-  "sold",
-  "reserved",
-];
-
-const UNSOLD_TERMS = ["未售出", "尚未售出", "還沒售出", "未賣出"];
+const COLOR_SHORTHANDS = ["黑", "白", "金", "銀", "藍", "紫", "粉", "紅", "綠", "黃", "灰", "橘"];
+const COLOR_TERMS_ENGLISH = ["black", "white", "gold", "silver", "blue", "purple", "pink", "red", "green", "yellow", "gray", "grey"];
 
 const LOCATION_ALIASES: Array<[string, string[]]> = [
-  ["基隆", ["基隆"]],
-  ["台北", ["台北", "臺北"]],
-  ["新北", ["新北"]],
-  ["桃園", ["桃園"]],
-  ["新竹", ["新竹"]],
-  ["苗栗", ["苗栗"]],
-  ["台中", ["台中", "臺中"]],
-  ["彰化", ["彰化"]],
-  ["南投", ["南投"]],
-  ["雲林", ["雲林"]],
-  ["嘉義", ["嘉義"]],
-  ["台南", ["台南", "臺南"]],
-  ["高雄", ["高雄"]],
-  ["屏東", ["屏東"]],
-  ["宜蘭", ["宜蘭"]],
-  ["花蓮", ["花蓮"]],
-  ["台東", ["台東", "臺東"]],
-  ["澎湖", ["澎湖"]],
-  ["金門", ["金門"]],
-  ["馬祖", ["馬祖", "連江"]],
+  ["基隆", ["基隆"]], ["台北", ["台北", "臺北", "台北市", "臺北市", "北市"]], ["新北", ["新北", "新北市"]],
+  ["桃園", ["桃園", "桃園市"]], ["新竹", ["新竹", "新竹市", "新竹縣"]], ["苗栗", ["苗栗", "苗栗縣"]],
+  ["台中", ["台中", "臺中", "台中市", "臺中市"]], ["彰化", ["彰化", "彰化縣"]], ["南投", ["南投", "南投縣"]],
+  ["雲林", ["雲林", "雲林縣"]], ["嘉義", ["嘉義", "嘉義市", "嘉義縣"]], ["台南", ["台南", "臺南", "台南市", "臺南市"]],
+  ["高雄", ["高雄", "高雄市"]], ["屏東", ["屏東", "屏東縣"]], ["宜蘭", ["宜蘭", "宜蘭縣"]], ["花蓮", ["花蓮", "花蓮縣"]],
+  ["台東", ["台東", "臺東", "台東縣", "臺東縣"]], ["澎湖", ["澎湖", "澎湖縣"]], ["金門", ["金門", "金門縣"]],
+  ["馬祖", ["馬祖", "連江", "連江縣"]],
 ];
+
+const PRICE_LABELS = "售價|賣價|售出價|出售價格|價格|欲售|售|賣";
+const RETAIL_PRICE_LABELS = "建議售價|原價|官網價|定價|購入價|買入價";
+const CONDITION_FIELDS = ["物品狀況", "商品狀況", "品項狀況", "狀況", "電池健康度", "電池", "盒裝配件", "盒裝", "配件", "保固", "交易方式", "面交地點", "地點"];
 
 function unique<T>(values: T[], key: (value: T) => string = String): T[] {
   const seen = new Set<string>();
@@ -92,103 +37,216 @@ export function compactText(text: string): string {
 }
 
 export function normalizeLocation(text: string): string {
-  return text.replaceAll("臺", "台").trim().replace(/[縣市區鄉鎮]+$/g, "");
+  const cleaned = text.replaceAll("臺", "台").trim().replace(/[，,、/\\|]+$/g, "").replace(/[縣市區鄉鎮]+$/g, "");
+  // Treat 雙北 as a Taipei-anchored filter; extracted 雙北 posts emit both cities.
+  return cleaned === "雙北" ? "台北" : cleaned;
 }
 
-function extractPrices(text: string): number[] {
-  const prices: number[] = [];
-  const chinesePricePattern = /(\d{1,2})\s*萬\s*(\d{0,4})\s*(?:元|塊|新台幣)?/g;
-  for (const match of text.matchAll(chinesePricePattern)) {
-    prices.push(Number(match[1]) * 10_000 + Number(match[2] || "0"));
-  }
-
-  const pricePattern = /(?:(?:售價|價格|售|賣價|售出價|收)?\s*[:：]?\s*)?(?:NT\$|NTD\s*|\$)?([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,6})\s*(?:元|塊|新台幣|TWD)?/gi;
-  for (const match of text.matchAll(pricePattern)) {
-    const index = match.index ?? 0;
-    const value = Number(match[1].replaceAll(",", ""));
-    const after = text.slice(index + match[0].length, index + match[0].length + 2);
-    if (after.startsWith("年") || after.startsWith("/") || after.startsWith("-") || after.startsWith("以上")) continue;
-
-    const explicitCurrency = /(?:元|塊|新台幣|NT\$|TWD|\$)/i.test(match[0]);
-    if (value >= 2018 && value <= 2030 && !explicitCurrency) continue;
-
-    const before = text.slice(Math.max(0, index - 10), index);
-    const priceContext = /(?:價格|售價|賣價|售出價|售|賣|收)/.test(before);
-    if ((explicitCurrency || priceContext) && !prices.includes(value)) prices.push(value);
-  }
-  return prices;
+function splitLines(text: string): string[] {
+  return text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim());
 }
 
-function extractCapacities(text: string): string[] {
+function isBoilerplateLine(line: string): boolean {
+  return /(?:板規|版規|公告|範例|例如|格式|請注意|規則|簽名檔|熱門容量|常見容量|5001\s*元以上的商品|只可面交|第三方代收)/i.test(line);
+}
+
+function itemLines(source: string): string[] {
+  return splitLines(source).filter((line, index) => Boolean(line) && (index === 0 || !isBoilerplateLine(line)));
+}
+
+interface PriceCandidate {
+  value: number;
+  index: number;
+  score: number;
+  actualLabel: boolean;
+  retailLabel: boolean;
+}
+
+function isRetailLabel(label: string): boolean {
+  return new RegExp(`^(?:${RETAIL_PRICE_LABELS})$`, "i").test(label);
+}
+
+function nearestLabel(text: string, index: number): { actual: boolean; retail: boolean } {
+  const labels = Array.from(text.matchAll(new RegExp(`(?:${RETAIL_PRICE_LABELS}|${PRICE_LABELS})`, "g")))
+    .map((match) => ({ index: match.index ?? -1, kind: isRetailLabel(match[0]) ? "retail" as const : "actual" as const }))
+    .filter((label) => label.index < index && index - label.index <= 40)
+    .sort((a, b) => b.index - a.index);
+  return { actual: labels[0]?.kind === "actual", retail: labels[0]?.kind === "retail" };
+}
+
+function addPriceCandidate(candidates: PriceCandidate[], value: number, index: number, context: string, absoluteIndex: number, kind: "currency" | "chinese" | "label"): void {
+  if (!Number.isFinite(value) || value < 0 || value > 999_999) return;
+  const before = context.slice(0, index);
+  const labels = nearestLabel(context, index);
+  const hasCurrency = kind === "currency";
+  const score = (labels.actual ? 100 : 0) + (labels.retail ? -55 : 0) + (hasCurrency ? 55 : 0) + (kind === "chinese" ? 45 : 0) + (kind === "label" ? 20 : 0) + (/(?:價格|售價|賣價|售出價|售|賣)/.test(before.slice(-12)) ? 20 : 0);
+  candidates.push({ value, index: absoluteIndex, score, actualLabel: labels.actual, retailLabel: labels.retail });
+}
+
+function parsePriceText(text: string, absoluteOffset: number, candidates: PriceCandidate[]): void {
+  const chinesePattern = /(\d{1,2})\s*萬\s*(\d{0,4})\s*(?:元|塊|新台幣)?/g;
+  for (const match of text.matchAll(chinesePattern)) {
+    addPriceCandidate(candidates, Number(match[1]) * 10_000 + Number(match[2] || "0"), match.index ?? 0, text, absoluteOffset + (match.index ?? 0), "chinese");
+  }
+  const currencyPattern = /(?:NT\s*\$|NTD\s*|TWD\s*|\$)\s*([0-9][0-9,]*)|(?<!萬|[0-9])([0-9][0-9,]*)\s*(?:元|塊|新台幣|TWD)/gi;
+  for (const match of text.matchAll(currencyPattern)) {
+    const raw = match[1] ?? match[2];
+    addPriceCandidate(candidates, Number(raw.replaceAll(",", "")), match.index ?? 0, text, absoluteOffset + (match.index ?? 0), "currency");
+  }
+  const labelPattern = new RegExp(`(?:[\\[【]\\s*)?(${RETAIL_PRICE_LABELS}|${PRICE_LABELS})(?:\\s*[\\]】])?\\s*[:：]?\\s*((?:\\d{1,2}\\s*萬\\s*\\d{0,4})|(?:[0-9][0-9,]{0,6}))(?!\\s*萬)`, "gi");
+  for (const match of text.matchAll(labelPattern)) {
+    const raw = match[2];
+    const valueIndex = (match.index ?? 0) + match[0].lastIndexOf(raw);
+    const value = raw.includes("萬")
+      ? Number(raw.replace(/\\s+/g, "").replace("萬", "0000"))
+      : Number(raw.replaceAll(",", ""));
+    addPriceCandidate(candidates, value, valueIndex, text, absoluteOffset + valueIndex, "label");
+  }
+}
+
+function isSuspiciousPriceLine(line: string): boolean {
+  return /(?:5001\s*元以上|以上的商品|板規|版規|公告|範例|例如|格式|只可面交|第三方代收)/i.test(line);
+}
+
+function extractPrices(source: string): { values: number[]; price: number | null } {
+  const candidates: PriceCandidate[] = [];
+  const lines = splitLines(source);
+  let offset = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const lineOffset = offset;
+    offset += line.length + 1;
+    if (!line || isSuspiciousPriceLine(line)) continue;
+    parsePriceText(line, lineOffset, candidates);
+    if (new RegExp(`^\\s*(?:\\[|【)?\\s*(?:${RETAIL_PRICE_LABELS}|${PRICE_LABELS})\\s*(?:\\]|】)?\\s*[:：]?\\s*$`, "i").test(line)) {
+      const next = lines.slice(index + 1).find((value) => Boolean(value));
+      if (next && !isSuspiciousPriceLine(next)) parsePriceText(`${line} ${next}`, lineOffset, candidates);
+    }
+  }
+
+  const merged = new Map<number, PriceCandidate>();
+  for (const candidate of candidates) {
+    const existing = merged.get(candidate.value);
+    if (!existing || candidate.score > existing.score) merged.set(candidate.value, candidate);
+  }
+  const ordered = [...merged.values()].sort((a, b) => a.index - b.index);
+  const values = ordered.map((candidate) => candidate.value);
+  if (!ordered.length) return { values, price: null };
+  const actualPrices = unique(ordered.filter((candidate) => candidate.actualLabel && !candidate.retailLabel).map((candidate) => candidate.value));
+  if (actualPrices.length > 1) return { values, price: null };
+  if (actualPrices.length === 1) return { values, price: actualPrices[0] };
+  if (ordered.every((candidate) => candidate.retailLabel)) return { values, price: null };
+  if (ordered.length === 1) return { values, price: ordered[0].value };
+  const ranked = [...ordered].sort((a, b) => b.score - a.score);
+  return ranked[0].score > ranked[1].score ? { values, price: ranked[0].value } : { values, price: null };
+}
+
+function extractCapacities(lines: string[]): string[] {
   const values: string[] = [];
   const pattern = /(?:^|[^A-Za-z0-9])(32|64|128|256|512|1024|[12])\s*(GB|G|TB|T)(?![A-Za-z0-9])/gi;
-  for (const match of text.matchAll(pattern)) {
-    const number = match[1];
-    const unit = match[2].toUpperCase();
-    if (unit === "T" || unit === "TB" || (number === "1024" && ["G", "GB"].includes(unit))) {
-      values.push(`${number === "1024" ? "1" : number}TB`);
-    } else {
-      values.push(`${number}GB`);
+  for (const line of lines) {
+    for (const match of line.matchAll(pattern)) {
+      const number = match[1];
+      const unit = match[2].toUpperCase();
+      values.push(unit === "T" || unit === "TB" || (number === "1024" && ["G", "GB"].includes(unit)) ? `${number === "1024" ? "1" : number}TB` : `${number}GB`);
     }
   }
   return unique(values);
 }
 
-function extractColors(text: string): string[] {
-  const compact = compactText(text);
-  const matched = COLOR_TERMS_CHINESE.filter((color) => compact.includes(compactText(color)));
-  if (compact.includes(compactText("原色鈦"))) matched.push("原色鈦金屬");
-  for (const color of COLOR_TERMS_ENGLISH) {
-    if (new RegExp(`\\b${color}\\b`, "i").test(text)) matched.push(color);
+function separatedChineseTerm(line: string, term: string): boolean {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[\\s:：/、,，()（）\\[\\]【】])${escaped}(?=$|[\\s:：/、,，()（）\\[\\]【】])`).test(line);
+}
+
+function extractColors(lines: string[]): string[] {
+  const searchable = lines.join("\n");
+  const fieldText = lines.filter((line) => /(?:顏色|颜色|色系|配色|color|colour)\s*[:：]?/i.test(line)).join("\n");
+  const matched: string[] = [];
+  for (const color of COLOR_TERMS_CHINESE) {
+    if (compactText(searchable).includes(compactText(color))) matched.push(color === "原色鈦" ? "原色鈦金屬" : color);
   }
-  const specific = matched.filter(
-    (color) => !matched.some((other) => color !== other && compactText(other).includes(compactText(color))),
-  );
+  for (const shorthand of COLOR_SHORTHANDS) {
+    if (fieldText && fieldText.includes(shorthand)) matched.push(shorthand);
+    else if (lines.some((line, index) => index === 0 && separatedChineseTerm(line, shorthand))) matched.push(shorthand);
+  }
+  for (const color of COLOR_TERMS_ENGLISH) if (new RegExp(`\\b${color}\\b`, "i").test(searchable)) matched.push(color);
+  const specific = matched.filter((color) => !matched.some((other) => color !== other && compactText(other).includes(compactText(color))));
   return unique(specific);
 }
 
 function extractSoldStatus(text: string): SearchResult["soldStatus"] {
-  const lower = text.toLocaleLowerCase();
-  if (UNSOLD_TERMS.some((term) => lower.includes(term.toLocaleLowerCase()))) return "未售出";
-  if (SOLD_TERMS.some((term) => lower.includes(term.toLocaleLowerCase()))) return "已售出";
-  return "未判斷";
+  const events: Array<{ index: number; status: SearchResult["soldStatus"] }> = [];
+  const negativePattern = /未售出|尚未售出|還沒售出|未賣出|未售|未成交|\bunsold\b|\bnot\s+sold\b/gi;
+  const positivePattern = /(?:[\[［]\s*(?:已售出?|售出|已賣出?|已成交|交易完成|已預訂|已預定|sold|reserved)\s*[\]］])|已售出?|已賣出?|已成交|交易完成|已預訂|已預定|(?<!欲|未)(?:售出|賣出)(?!價|價格|後|概不|不退)|(?<![A-Za-z])sold(?![A-Za-z])/gi;
+  const titleSoldPattern = /(?:[\[［]\s*(?:已售出?|售出|已賣出?|已成交|交易完成|已預訂|已預定|sold|reserved)\s*[\]］])|(?:^|\s)(?:sold|reserved)(?=\s|$)/i;
+  if (titleSoldPattern.test(text.split(/\r?\n/, 1)[0] ?? "")) return "已售出";
+  for (const match of text.matchAll(negativePattern)) events.push({ index: match.index ?? 0, status: "未售出" });
+  for (const match of text.matchAll(positivePattern)) events.push({ index: match.index ?? 0, status: "已售出" });
+  events.sort((a, b) => a.index - b.index);
+  return events.at(-1)?.status ?? "未判斷";
 }
 
-function extractLocations(text: string): string[] {
-  return LOCATION_ALIASES.filter(([, aliases]) => aliases.some((alias) => text.includes(alias))).map(
-    ([name]) => name,
-  );
+function extractLocations(source: string): string[] {
+  const lines = itemLines(source);
+  const locationContext = /面交|交易|取貨|自取|寄送|郵寄|交貨|所在地|地點|地區|住在|人在|雙北/;
+  const relevant = lines.filter((line, index) => index === 0 || locationContext.test(line) || line.length <= 10);
+  const found: string[] = [];
+  for (const [name, aliases] of LOCATION_ALIASES) if (relevant.some((line) => aliases.some((alias) => line.includes(alias)))) found.push(name);
+  if (relevant.some((line) => line.includes("雙北"))) found.push("台北", "新北");
+  return unique(found);
+}
+
+function conditionField(line: string): { label: string; value: string } | null {
+  const fields = CONDITION_FIELDS.join("|");
+  let normalized = line.replace(/^[-*※•]\s*/, "").trim();
+  if (normalized.startsWith("[") || normalized.startsWith("【")) normalized = normalized.slice(1).trimStart();
+  if (normalized.endsWith("]") || normalized.endsWith("】")) normalized = normalized.slice(0, -1).trimEnd();
+  const match = normalized.match(new RegExp(`^(${fields})(?:(?:\\s*[:：]\\s*|\\s+)(.*))?$`));
+  return match ? { label: match[1], value: (match[2] ?? "").trim() } : null;
 }
 
 function extractCondition(content: string): string {
-  const usefulLine = /(?:物品|商品)?狀況|品項狀況|保固|電池(?:健康度)?|盒裝|配件|交易方式|面交地點/;
-  const lines = unique(
-    content
-      .split(/\r?\n/)
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter((line) => line.length >= 3 && usefulLine.test(line)),
-  ).slice(0, 4);
-  if (!lines.length) return "未擷取到明確商品狀況；請開啟原文確認";
-  const summary = lines.join("；");
+  const lines = splitLines(content);
+  const summaries: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line || isBoilerplateLine(line)) continue;
+    const field = conditionField(line);
+    if (!field) continue;
+    let value = field.value;
+    if (!value) {
+      const next = lines.slice(index + 1).find((candidate) => Boolean(candidate));
+      if (next && !isBoilerplateLine(next) && !conditionField(next)) value = next;
+    }
+    if (value) summaries.push(`${field.label}：${value}`);
+  }
+  const shown = unique(summaries).slice(0, 4);
+  if (!shown.length) return "未擷取到明確商品狀況；請開啟原文確認";
+  const summary = shown.join("；");
   return summary.length > 180 ? `${summary.slice(0, 177)}…` : summary;
+}
+
+function isVagueModelKeyword(keyword: string): boolean {
+  return /^\d{1,3}$/.test(keyword.trim());
 }
 
 export function classifyArticle(article: Article, keywords: string[]): SearchResult {
   const source = `${article.title}\n${article.content}`;
   const compactSource = compactText(source);
-  const matchedKeywords = unique(keywords.filter((keyword) => compactSource.includes(compactText(keyword))));
-  const pricesFound = extractPrices(source);
-  const capacities = extractCapacities(source);
-  const colors = extractColors(source);
+  const matchedKeywords = unique(keywords.filter((keyword) => !isVagueModelKeyword(keyword) && compactSource.includes(compactText(keyword))));
+  const priceResult = extractPrices(source);
+  const lines = itemLines(source);
+  const capacities = extractCapacities(lines);
+  const colors = extractColors(lines);
   const soldStatus = extractSoldStatus(source);
-
   return {
     ...article,
     matchedKeywords,
     model: matchedKeywords.join("、"),
     storage: capacities.join("、"),
-    price: pricesFound[0] ?? null,
-    pricesFound,
+    price: priceResult.price,
+    pricesFound: priceResult.values,
     color: colors.join("、"),
     soldStatus,
     sold: soldStatus === "已售出",
