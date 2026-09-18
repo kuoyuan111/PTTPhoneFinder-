@@ -13,8 +13,8 @@
 | 正式網址 | `https://ptt-phone-finder.vercel.app` |
 | Function region | `hkg1`（香港，由 `vercel.json` 管理） |
 | Environment Variables | 無 |
-| 目前部署方式 | 已由本機 Vercel CLI 連結並直接部署 |
-| GitHub 自動部署 | 尚未連接；需在 Vercel 授權 GitHub repository 後才會啟用 |
+| 目前部署方式 | GitHub `main` push 自動建立 production deployment；Vercel CLI 作為 fallback |
+| GitHub 自動部署 | 已連接 `kuoyuan111/PTTPhoneFinder-`，Production Branch 為 `main` |
 
 網站頁尾會顯示自動產生的建置版本，例如 `2026.09.18-18:30:45（台灣時間）`。版本由 `scripts/run-next.mjs` 在 `npm run build`／Vercel production build 時產生，格式是 `YYYY.MM.DD-HH:mm:ss`；不需要設定環境變數，也不應手動修改版本字串。`npm run dev` 會顯示開發伺服器啟動時的版本時間。
 
@@ -22,7 +22,7 @@ Vercel CLI 會在本機產生 `.vercel/project.json`，內容是 project/org 識
 
 ## 每次變更必做：提交、推送、重新部署
 
-這個專案目前尚未連接 Vercel 的 GitHub 自動部署（見上方「目前正式環境」），所以 `git push` 不會自動更新正式網址。其他 AI 或維護者只要有任何已提交變更，不論是程式、測試、文件或部署設定，都必須完成以下完整流程；只建 commit、只 push，或只在本機 build，都不算上線完成。
+這個專案已連接 Vercel 的 GitHub 自動部署（見上方「目前正式環境」）。其他 AI 或維護者只要有任何已提交變更，不論是程式、測試、文件或部署設定，都必須完成以下完整流程；push 到 `main` 後，Vercel 必須建立一個新的 production deployment 並驗證 READY、正式 alias 與頁面版本。只建 commit、只在本機 build，或沒有確認 Vercel deployment，都不算上線完成。
 
 ### 1. 更新前確認範圍與工作樹
 
@@ -73,7 +73,17 @@ git ls-remote origin refs/heads/main
 
 `git ls-remote` 回傳的 `main` SHA 必須與 `git rev-parse HEAD` 相同。禁止 force push `main`。
 
-### 4. 用 Vercel CLI 建立同一個 production project 的新 deployment
+### 4. 等待 GitHub 自動建立 production deployment
+
+目前正常路徑是 `git push origin main` 後等待 Vercel 自動建立 deployment。到 Vercel project 的 Deployments 頁確認最新 deployment 的 source 是剛推送的 `main` commit，target 是 `Production`，狀態最後為 `Ready`，並且正式 alias 仍是：
+
+```text
+https://ptt-phone-finder.vercel.app
+```
+
+不要因為 push 成功就直接宣稱完成；必須等 Vercel build 結束並執行第 5 步上線後驗證。
+
+### 5. GitHub 自動部署失敗時的 Vercel CLI fallback
 
 先確認 CLI 登入的是 `kuoyuan111`／`owen123`，並且 `.vercel/project.json` 指向 `ptt-phone-finder`：
 
@@ -99,9 +109,9 @@ npx --yes vercel@latest link --project ptt-phone-finder
 Aliased https://ptt-phone-finder.vercel.app
 ```
 
-`--prod` 是 production target，`--yes` 讓非互動 AI 維護流程不會停在確認提示。每次執行都會建立新的 deployment；不要用舊 deployment 的 rollback 代替本次變更的重新部署。
+只有在 GitHub 自動部署沒有建立、連線暫時失效，或需要明確重建 production deployment 時，才執行 CLI fallback。`--prod` 是 production target，`--yes` 讓非互動 AI 維護流程不會停在確認提示；不要在 GitHub 自動部署已成功後再額外執行 CLI，避免同一個 commit 產生不必要的重複 deployment。不要用舊 deployment 的 rollback 代替本次變更的重新部署。
 
-### 5. 上線後驗證
+### 6. 上線後驗證
 
 ```powershell
 $response = Invoke-WebRequest -Uri "https://ptt-phone-finder.vercel.app" -UseBasicParsing
@@ -115,8 +125,9 @@ $response.Content -match "版本 [0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9]{2}:[0-9]{2}:
 
 - `unable to get local issuer certificate` 或 CLI `fetch failed`：先在同一 PowerShell 設定 `$env:NODE_OPTIONS = "--use-system-ca"` 後重試，不能用關閉 TLS 驗證的方式繞過。
 - `Not authorized`：先執行 `npx --yes vercel@latest whoami`；若不是 `kuoyuan111`，重新 `vercel login`，不要把 token 寫入 repository。
-- build 失敗：保留 GitHub 上已推送的 commit，修正後重新跑第 2 步到第 5 步；不能把未通過 build 的 deployment 當成完成。
-- deployment READY 但正式網址仍是舊版：確認 CLI 輸出有 `Aliased ...ptt-phone-finder.vercel.app`，並在 Vercel project 確認 target 是 Production；不要只看 preview URL。
+- build 失敗：保留 GitHub 上已推送的 commit，修正後重新跑第 2 步到第 6 步；不能把未通過 build 的 deployment 當成完成。
+- GitHub push 後沒有 deployment：先確認 Vercel Git 設定仍顯示 `kuoyuan111/PTTPhoneFinder-` 且 branch 是 `main`；若連線正常仍未建立，再使用第 5 步 CLI fallback。
+- deployment READY 但正式網址仍是舊版：確認 Vercel deployment 的 target 是 Production、source commit 正確，並確認正式 alias；不要只看 preview URL。
 
 ## 技術架構
 
@@ -167,9 +178,9 @@ npm audit --audit-level=moderate
 
 ## Vercel Hobby 部署
 
-### 方式一：Vercel CLI（目前可用）
+### 方式一：Vercel CLI fallback（自動部署失敗時使用）
 
-完整維護順序請遵守本文件上方「每次變更必做：提交、推送、重新部署」；以下是新電腦第一次設定的快速指令。
+正常情況使用 GitHub `main` push 自動部署；完整維護順序請遵守本文件上方「每次變更必做：提交、推送、重新部署」。以下只處理新電腦第一次設定，或 GitHub 自動部署失效時的 fallback。
 
 第一次在新電腦設定：
 
@@ -186,9 +197,9 @@ $env:NODE_OPTIONS = "--use-system-ca"
 npx --yes vercel@latest --prod --yes
 ```
 
-CLI deployment 不依賴 GitHub App 權限，即使 GitHub 自動部署尚未連接，也能更新同一個正式網址。
+CLI deployment 不依賴 GitHub 自動 webhook；當 GitHub App 尚未連接、連線失效或需要手動重建 production deployment 時，可更新同一個正式網址。
 
-### 方式二：連接 GitHub 自動部署
+### 方式二：GitHub 自動部署（目前已啟用）
 
 1. 前往 <https://vercel.com>，使用擁有此 repository 的 GitHub 帳號登入。
 2. 開啟既有的 `ptt-phone-finder` project，不要再建立同名專案。
@@ -197,7 +208,7 @@ CLI deployment 不依賴 GitHub App 權限，即使 GitHub 自動部署尚未連
 5. 選擇 repository，Production Branch 設為 `main`。
 6. Framework Preset 保持 `Next.js`，Root Directory 保持 repository 根目錄。
 7. Build Command、Output Directory 和 Install Command 維持預設值，不需要新增 Environment Variables。
-8. 連接成功後，push 到 `main` 會自動產生 production deployment；其他 branch/PR 會產生 preview deployment。
+8. 目前已連接 `kuoyuan111/PTTPhoneFinder-`；push 到 `main` 會自動產生 production deployment，其他 branch/PR 會產生 preview deployment。
 
 部署成功後，Vercel 會提供 `*.vercel.app` 網址。若 Vercel 專案已成功連接 GitHub，之後每次 push 到 production branch 都會自動重新部署。
 
@@ -223,11 +234,9 @@ npm run build
 npm audit --audit-level=moderate
 git diff --check
 git push
-$env:NODE_OPTIONS = "--use-system-ca"
-npx --yes vercel@latest --prod --yes
 ```
 
-最後仍要依「每次變更必做」的上線後驗證確認 HTTP 200 與頁尾版本。不要 force push `main`。若 `git status -sb` 顯示 `main...origin/feature/review-fixes`，代表本機 upstream 設定錯誤；重新執行 `git push -u origin main` 即可改回追蹤 `origin/main`。
+push 後等待 GitHub 自動 deployment，再依「每次變更必做」的上線後驗證確認 HTTP 200 與頁尾版本。不要 force push `main`。若 `git status -sb` 顯示 `main...origin/feature/review-fixes`，代表本機 upstream 設定錯誤；重新執行 `git push -u origin main` 即可改回追蹤 `origin/main`。
 
 ## 上線後測試
 
@@ -272,7 +281,7 @@ npm run build
 npm audit --audit-level=moderate
 ```
 
-若 GitHub 自動部署尚未連接，再執行 CLI production deployment。上線後依「上線後測試」驗收。
+若 GitHub 自動部署失效、沒有建立 deployment，再依上方 CLI fallback 執行 production deployment。上線後依「上線後測試」驗收。
 
 需要回復時，在 Vercel project 的 `Deployments` 頁選擇上一個已驗證成功的 deployment，使用 `Promote to Production`；接著在 Git 建立修正 commit，不要用 force push 或刪除歷史。
 
