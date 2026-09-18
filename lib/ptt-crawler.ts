@@ -170,7 +170,7 @@ function validateBoardName(board: string): string {
 function validatePttUrl(value: string, expectedBoard?: string): URL {
   const target = new URL(value);
   if (target.origin !== PTT_BASE) throw new Error("拒絕存取非 PTT 網址");
-  const match = target.pathname.match(/^\/bbs\/([A-Za-z0-9][A-Za-z0-9_-]{0,31})\/(index\d*\.html|M\.\d+\.A\.[A-Za-z0-9]+\.html)$/i);
+  const match = target.pathname.match(/^\/bbs\/([A-Za-z0-9][A-Za-z0-9_-]{0,31})\/(index\d*\.html|M\.\d+\.A\.[A-Za-z0-9]+\.html|search)$/i);
   if (!match || (expectedBoard && match[1].toLocaleLowerCase() !== expectedBoard.toLocaleLowerCase())) {
     throw new Error("拒絕存取不合法的 PTT 路徑");
   }
@@ -409,11 +409,29 @@ function sourceFailureLabel(source: "ptt" | "jina" | "pttweb", error: unknown): 
   return `${sourceName}失敗：${safeMessage(error)}`;
 }
 
-async function fetchBoardLatest(board: string, realtimePages: number, budget: ReaderBudget, signal?: AbortSignal): Promise<BoardListing> {
-  const latestUrl = `${PTT_BASE}/bbs/${encodeURIComponent(board)}/index.html`;
+async function fetchBoardLatest(board: string, realtimePages: number, budget: ReaderBudget, signal?: AbortSignal, keyword?: string): Promise<BoardListing> {
+  const query = keyword?.trim();
+  const searchUrl = query ? `${PTT_BASE}/bbs/${encodeURIComponent(board)}/search?q=${encodeURIComponent(query)}` : null;
+  const indexUrl = `${PTT_BASE}/bbs/${encodeURIComponent(board)}/index.html`;
+  const latestUrl = searchUrl || indexUrl;
   const warnings: string[] = [];
   try {
-    const page = await fetchBoardPage(board, latestUrl, "ptt", budget, signal);
+    let page: ListingPage;
+    try {
+      page = await fetchBoardPage(board, latestUrl, "ptt", budget, signal);
+      if (searchUrl && page.articles.length === 0) {
+        try {
+          const indexPage = await fetchBoardPage(board, indexUrl, "ptt", budget, signal);
+          if (indexPage.articles.length > 0) page = indexPage;
+        } catch { /* keep search page */ }
+      }
+    } catch (searchErr) {
+      if (searchUrl && (searchErr instanceof PttNotFoundError || isFallbackEligible(searchErr))) {
+        page = await fetchBoardPage(board, indexUrl, "ptt", budget, signal);
+      } else {
+        throw searchErr;
+      }
+    }
     return { board, articles: page.articles, source: "ptt", nextUrl: page.nextUrl, warnings };
   } catch (nativeError) {
     if (nativeError instanceof PttNotFoundError) throw new PttBoardNotFoundError(`${board} 看板不存在或已刪除（HTTP 404）`);
@@ -421,7 +439,22 @@ async function fetchBoardLatest(board: string, realtimePages: number, budget: Re
     warnings.push(`[${board}] ${sourceFailureLabel("ptt", nativeError)}`);
     if (realtimePages > 0 && isFallbackEligible(nativeError)) {
       try {
-        const page = await fetchBoardPage(board, latestUrl, "jina", budget, signal);
+        let page: ListingPage;
+        try {
+          page = await fetchBoardPage(board, latestUrl, "jina", budget, signal);
+          if (searchUrl && page.articles.length === 0) {
+            try {
+              const indexPage = await fetchBoardPage(board, indexUrl, "jina", budget, signal);
+              if (indexPage.articles.length > 0) page = indexPage;
+            } catch { /* keep search page */ }
+          }
+        } catch (jinaSearchErr) {
+          if (searchUrl && (jinaSearchErr instanceof PttNotFoundError || isFallbackEligible(jinaSearchErr))) {
+            page = await fetchBoardPage(board, indexUrl, "jina", budget, signal);
+          } else {
+            throw jinaSearchErr;
+          }
+        }
         warnings.push(`[${board}] 看板最新頁已改用 Jina Reader。`);
         return { board, articles: page.articles, source: "jina", nextUrl: page.nextUrl, warnings };
       } catch (readerError) {
@@ -434,7 +467,7 @@ async function fetchBoardLatest(board: string, realtimePages: number, budget: Re
       }
     }
     try {
-      const page = await fetchBoardPage(board, latestUrl, "pttweb", budget, signal);
+      const page = await fetchBoardPage(board, indexUrl, "pttweb", budget, signal);
       warnings.push(`[${board}] 看板已改用可能延遲的 PTTweb 鏡像。`);
       return { board, articles: page.articles, source: "pttweb", nextUrl: null, warnings };
     } catch (mirrorError) {
@@ -544,9 +577,30 @@ async function fetchArticle(article: Article, budget: ReaderBudget, signal?: Abo
   }
 }
 
-function titleMatches(title: string, keywords: string[]): boolean {
+export function matchToken(compactText: string, token: string): boolean {
+  if (compactText.includes(token)) return true;
+  if (token.endsWith("gb")) {
+    const withoutB = token.slice(0, -1);
+    if (compactText.includes(withoutB)) return true;
+    const numOnly = token.slice(0, -2);
+    if (compactText.includes(numOnly)) return true;
+  }
+  if (token.endsWith("tb")) {
+    const withoutB = token.slice(0, -1);
+    if (compactText.includes(withoutB)) return true;
+  }
+  return false;
+}
+
+export function titleMatches(title: string, keywords: string[]): boolean {
   const compactTitle = compactText(title);
-  return keywords.some((keyword) => compactText(keyword).length > 0 && compactTitle.includes(compactText(keyword)));
+  return keywords.some((keyword) => {
+    const compactKw = compactText(keyword);
+    if (!compactKw) return false;
+    if (compactTitle.includes(compactKw)) return true;
+    const tokens = keyword.split(/[\s/_-]+/).map(compactText).filter(Boolean);
+    return tokens.length > 1 && tokens.every((token) => matchToken(compactTitle, token));
+  });
 }
 
 const SALE_TAGS = new Set(["賣", "售", "出售", "販售", "二手", "交易", "售出", "已售", "已售出"]);
@@ -555,6 +609,9 @@ const NON_SALE_TAGS = new Set(["徵", "徵求", "求購", "收購", "收", "交�
 export function looksLikeSale(title: string): boolean {
   const normalized = title.replace(/[［【]/g, "[").replace(/[］】]/g, "]").replace(/\s+/g, "");
   const leadingTags = [...normalized.matchAll(/^\[([^\]]+)\]/g)].map((match) => match[1].toLocaleLowerCase());
+  const tagTokens = leadingTags.flatMap((tag) => tag.split(/[/、,\s]+/));
+  if (tagTokens.some((tag) => NON_SALE_TAGS.has(tag))) return false;
+  if (tagTokens.some((tag) => SALE_TAGS.has(tag))) return true;
   if (leadingTags.some((tag) => NON_SALE_TAGS.has(tag))) return false;
   if (leadingTags.some((tag) => SALE_TAGS.has(tag))) return true;
   if (/\b(?:news|discussion|wanted|lookingfor)\b/i.test(normalized)) return false;
@@ -587,7 +644,14 @@ export async function searchPtt(options: SearchRequest, signal?: AbortSignal): P
   const readerBudget: ReaderBudget = { remaining: JINA_REQUEST_BUDGET };
   const boards = dedupeBoards(options.boards);
   validateKeywords(options.keywords);
-  const realtimePages = allocateRealtimePages(boards.length, options.pages);
+  const validKeywords = options.keywords.filter((kw) => compactText(kw).length > 0);
+  const targets: Array<{ board: string; keyword: string }> = [];
+  for (const board of boards) {
+    for (const kw of validKeywords) {
+      targets.push({ board, keyword: kw.trim() });
+    }
+  }
+  const realtimePages = allocateRealtimePages(targets.length, options.pages);
   if (!boards.length) return { results, candidateCount: 0, elapsedMs: 0, warnings: ["至少需要一個 PTT 看板"] };
   const searchController = new AbortController();
   const timeoutReason = new SearchTimeoutError("搜尋已達 50 秒上限，已回傳目前累積結果");
@@ -597,10 +661,10 @@ export async function searchPtt(options: SearchRequest, signal?: AbortSignal): P
   const listings: BoardListing[] = [];
   let candidateCount = 0;
   try {
-    // Phase 1: every board's latest page is collected before any older page or article detail.
-    for (const [boardIndex, board] of boards.entries()) {
+    // Phase 1: every target's latest page is collected before any older page or article detail.
+    for (const [targetIndex, target] of targets.entries()) {
       try {
-        const listing = await fetchBoardLatest(board, realtimePages[boardIndex] ?? 0, readerBudget, searchController.signal);
+        const listing = await fetchBoardLatest(target.board, realtimePages[targetIndex] ?? 0, readerBudget, searchController.signal, target.keyword);
         listings.push(listing);
         warnings.push(...listing.warnings);
       } catch (error) {
@@ -609,15 +673,14 @@ export async function searchPtt(options: SearchRequest, signal?: AbortSignal): P
           warnings.push(error.message);
           break;
         }
-        warnings.push(`[${board}] ${safeMessage(error)}`);
+        warnings.push(`[${target.board}] ${safeMessage(error)}`);
       }
     }
     // Phase 2: only after all latest pages have been attempted, walk older pages.
     if (!searchController.signal.aborted) {
-      for (const listing of listings) {
+      for (const [targetIndex, listing] of listings.entries()) {
         if (options.pages <= 1 || listing.source === "pttweb") continue;
-        const boardIndex = boards.indexOf(listing.board);
-        const allowedPages = listing.source === "jina" ? Math.min(options.pages, realtimePages[boardIndex] ?? 1) : options.pages;
+        const allowedPages = listing.source === "jina" ? Math.min(options.pages, realtimePages[targetIndex] ?? 1) : options.pages;
         try {
           await fetchOlderBoardPages(listing, allowedPages, readerBudget, searchController.signal);
         } catch (error) {

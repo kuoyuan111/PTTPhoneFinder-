@@ -11,7 +11,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, quote
 
 # 使用 Windows 憑證存放區，讓企業/系統 CA 能被 HTTPS 驗證使用。
 import truststore
@@ -297,8 +297,12 @@ class PTTMacShopCrawler:
         page_count: int,
         stop_event: threading.Event,
         page_callback,
+        keyword: str = "",
     ) -> list[Article]:
-        url = f"{PTT_BASE}/bbs/{board}/index.html"
+        if keyword:
+            url = f"{PTT_BASE}/bbs/{board}/search?q={quote(keyword)}"
+        else:
+            url = f"{PTT_BASE}/bbs/{board}/index.html"
         articles: list[Article] = []
         known_urls: set[str] = set()
 
@@ -306,7 +310,14 @@ class PTTMacShopCrawler:
             if stop_event.is_set():
                 break
             page_callback(page_no, page_count)
-            response = self._get(url)
+            try:
+                response = self._get(url)
+            except requests.RequestException:
+                if keyword and page_no == 1:
+                    url = f"{PTT_BASE}/bbs/{board}/index.html"
+                    response = self._get(url)
+                else:
+                    raise
             soup = BeautifulSoup(response.text, "html.parser")
 
             # PTT 不存在的看板有時會回傳非預期頁面而非單純 404。
@@ -700,9 +711,30 @@ class SearchWorker(QThread):
     def _log(self, message: str) -> None:
         self.log.emit(f"{now_text()} {message}")
 
+    @staticmethod
+    def _match_token(compact_text: str, token: str) -> bool:
+        if token in compact_text:
+            return True
+        if token.endswith("gb"):
+            if token[:-1] in compact_text or token[:-2] in compact_text:
+                return True
+        if token.endswith("tb"):
+            if token[:-1] in compact_text:
+                return True
+        return False
+
     def _title_matches(self, title: str) -> bool:
         compact_title = compact_text(title)
-        return any(compact_text(keyword) in compact_title for keyword in self.options.keywords)
+        for keyword in self.options.keywords:
+            compact_kw = compact_text(keyword)
+            if not compact_kw:
+                continue
+            if compact_kw in compact_title:
+                return True
+            tokens = [compact_text(t) for t in re.split(r"[\s/_-]+", keyword) if compact_text(t)]
+            if len(tokens) > 1 and all(self._match_token(compact_title, t) for t in tokens):
+                return True
+        return False
 
     def _matching_keywords(self, text: str) -> list[str]:
         compact_value = compact_text(text)
@@ -773,26 +805,42 @@ class SearchWorker(QThread):
         for board in self.options.boards:
             if self.stop_event.is_set():
                 break
-            self._log(f"[{board}] 正在驗證並讀取看板")
-            try:
-                articles = crawler.fetch_board_pages(
-                    board,
-                    self.options.pages,
-                    self.stop_event,
-                    lambda current, total, b=board: self._log(
-                        f"[{b}] 正在讀取第 {current} / {total} 頁"
-                    ),
-                )
-                self._log(f"[{board}] 取得 {len(articles)} 篇文章標題")
-            except PTTBoardNotFound as exc:
-                self._log(f"找不到看板 {board}，已略過：{safe_error(exc)}")
-                continue
-            except requests.RequestException as exc:
-                self._log(f"[{board}] PTT 連線失敗，已略過：{safe_error(exc)}")
-                continue
-            except Exception as exc:
-                self._log(f"[{board}] 讀取失敗，已略過：{safe_error(exc)}")
-                continue
+            self._log(f"[{board}] 正在驗證並搜尋看板")
+            articles: list[Article] = []
+            valid_kws = [k.strip() for k in self.options.keywords if compact_text(k)]
+            search_kws = valid_kws if valid_kws else [""]
+            for kw in search_kws:
+                if self.stop_event.is_set():
+                    break
+                try:
+                    kw_articles = crawler.fetch_board_pages(
+                        board,
+                        self.options.pages,
+                        self.stop_event,
+                        lambda current, total, b=board, k=kw: self._log(
+                            f"[{b}] 正在讀取「{k}」第 {current} / {total} 頁" if k else f"[{b}] 正在讀取第 {current} / {total} 頁"
+                        ),
+                        keyword=kw,
+                    )
+                    articles.extend(kw_articles)
+                except PTTBoardNotFound as exc:
+                    self._log(f"找不到看板 {board}，已略過：{safe_error(exc)}")
+                    break
+                except requests.RequestException as exc:
+                    self._log(f"[{board}] PTT 連線失敗，已略過：{safe_error(exc)}")
+                    continue
+                except Exception as exc:
+                    self._log(f"[{board}] 讀取失敗，已略過：{safe_error(exc)}")
+                    continue
+
+            seen_urls: set[str] = set()
+            deduped: list[Article] = []
+            for a in articles:
+                if a.url not in seen_urls:
+                    seen_urls.add(a.url)
+                    deduped.append(a)
+            articles = deduped
+            self._log(f"[{board}] 取得 {len(articles)} 篇文章標題")
 
             candidates = [
                 article

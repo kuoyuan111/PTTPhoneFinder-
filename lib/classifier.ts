@@ -231,10 +231,37 @@ function isVagueModelKeyword(keyword: string): boolean {
   return /^\d{1,3}$/.test(keyword.trim());
 }
 
+export function matchToken(compactText: string, token: string): boolean {
+  if (compactText.includes(token)) return true;
+  if (token.endsWith("gb")) {
+    const withoutB = token.slice(0, -1);
+    if (compactText.includes(withoutB)) return true;
+    const numOnly = token.slice(0, -2);
+    if (compactText.includes(numOnly)) return true;
+  }
+  if (token.endsWith("tb")) {
+    const withoutB = token.slice(0, -1);
+    if (compactText.includes(withoutB)) return true;
+  }
+  return false;
+}
+
+export function keywordMatchesText(text: string, keyword: string): boolean {
+  const compact = compactText(text);
+  const compactKw = compactText(keyword);
+  if (!compactKw) return false;
+  if (compact.includes(compactKw)) return true;
+  const tokens = keyword.split(/[\s/_-]+/).map(compactText).filter(Boolean);
+  return tokens.length > 1 && tokens.every((token) => matchToken(compact, token));
+}
+
 export function classifyArticle(article: Article, keywords: string[]): SearchResult {
   const source = `${article.title}\n${article.content}`;
-  const compactSource = compactText(source);
-  const matchedKeywords = unique(keywords.filter((keyword) => !isVagueModelKeyword(keyword) && compactSource.includes(compactText(keyword))));
+  const matchedKeywords = unique(
+    keywords.filter(
+      (keyword) => !isVagueModelKeyword(keyword) && keywordMatchesText(source, keyword),
+    ),
+  );
   const priceResult = extractPrices(source);
   const lines = itemLines(source);
   const capacities = extractCapacities(lines);

@@ -21,6 +21,8 @@ describe("PTT realtime source helpers", () => {
   it("accepts real article and numbered pagination URLs but rejects hostile paths", () => {
     expect(toJinaReaderUrl("https://www.ptt.cc/bbs/MacShop/M.1789699900.A.7FB.html")).toContain("M.1789699900.A.7FB.html");
     expect(toJinaReaderUrl("https://www.ptt.cc/bbs/MacShop/index4021.html")).toContain("index4021.html");
+    expect(toJinaReaderUrl("https://www.ptt.cc/bbs/MacShop/search?q=iPhone+16")).toBe("https://r.jina.ai/http://www.ptt.cc/bbs/MacShop/search?q=iPhone+16");
+    expect(toJinaReaderUrl("https://www.ptt.cc/bbs/MacShop/search?page=2&q=iPhone+16")).toBe("https://r.jina.ai/http://www.ptt.cc/bbs/MacShop/search?page=2&q=iPhone+16");
     expect(() => toJinaReaderUrl("https://www.ptt.cc/bbs/MacShop/../secret.html")).toThrow("不合法");
     expect(() => toJinaReaderUrl("https://www.ptt.cc/bbs/MacShop/M.1789699900.X.7FB.html")).toThrow("不合法");
   });
@@ -221,6 +223,34 @@ describe("PTT crawler full-flow safeguards", () => {
       expect(excluded.results).toHaveLength(0);
       expect(included.results).toHaveLength(1);
       expect(included.results[0].sold).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      resetCrawlerRuntimeState();
+    }
+  });
+
+  it("queries PTT native search endpoint and follows search pagination", async () => {
+    resetCrawlerRuntimeState();
+    const originalFetch = globalThis.fetch;
+    const requestedUrls: string[] = [];
+    const searchListingP1 = listing("/bbs/MacShop/search?page=2&q=iPhone+16");
+    const searchListingP2 = `<html><body><div id="main-container"><div class="r-list-container">
+      <div class="r-ent"><div class="title"><a href="/bbs/MacShop/M.1789699901.A.7FB.html">[販售] 雙北 iPhone 16 256G</a></div><div class="author">seller2</div><div class="date">9/18</div></div>
+    </div></div></body></html>`;
+    const searchArticle = article.replace("[販售] iPhone 17 256G", "[販售] iPhone 16 256G");
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.includes("/search?q=iPhone%2016") || url.includes("/search?q=iPhone+16")) return request(url, 200, searchListingP1);
+      if (url.includes("/search?page=2&q=iPhone+16") || url.includes("/search?page=2&q=iPhone%2016")) return request(url, 200, searchListingP2);
+      if (url.includes("M.1789699900.A.7FB.html") || url.includes("M.1789699901.A.7FB.html")) return request(url, 200, searchArticle);
+      return request(url, 404, "missing");
+    }) as typeof fetch;
+    try {
+      const result = await searchPtt({ boards: ["MacShop"], keywords: ["iPhone 16"], maxBudget: null, locations: [], pages: 2, includeSold: true });
+      expect(requestedUrls.some((u) => u.includes("/search?q=iPhone%2016") || u.includes("/search?q=iPhone+16"))).toBe(true);
+      expect(requestedUrls.some((u) => u.includes("/search?page=2&q=iPhone+16") || u.includes("/search?page=2&q=iPhone%2016"))).toBe(true);
+      expect(result.results.length).toBeGreaterThanOrEqual(1);
     } finally {
       globalThis.fetch = originalFetch;
       resetCrawlerRuntimeState();

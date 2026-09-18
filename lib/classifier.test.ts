@@ -170,4 +170,21 @@ describe("classifier", () => {
     expect(result.matchedKeywords).toEqual([]);
     expect(result.model).toBe("");
   });
+
+  it("matches keywords with space-separated tokens even when words intervene", () => {
+    const result = classifyArticle(
+      article("[販售] 雙北 iPhone 16 黑色 Pro 256G", "售價 27500"),
+      ["iPhone 16 Pro"],
+    );
+    expect(result.matchedKeywords).toContain("iPhone 16 Pro");
+    expect(result.model).toBe("iPhone 16 Pro");
+  });
+
+  it("matches keywords with 256GB against titles written as 256G", () => {
+    const result = classifyArticle(
+      article("[販售] 台北 iPhone 16 Pro 256G", "售價 27500"),
+      ["iPhone 16 Pro 256GB"],
+    );
+    expect(result.matchedKeywords).toContain("iPhone 16 Pro 256GB");
+  });
 });
