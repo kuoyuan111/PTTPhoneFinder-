@@ -413,25 +413,36 @@ async function fetchBoardLatest(board: string, realtimePages: number, budget: Re
   const query = keyword?.trim();
   const searchUrl = query ? `${PTT_BASE}/bbs/${encodeURIComponent(board)}/search?q=${encodeURIComponent(query)}` : null;
   const indexUrl = `${PTT_BASE}/bbs/${encodeURIComponent(board)}/index.html`;
-  const latestUrl = searchUrl || indexUrl;
   const warnings: string[] = [];
-  try {
-    let page: ListingPage;
+
+  if (searchUrl) {
     try {
-      page = await fetchBoardPage(board, latestUrl, "ptt", budget, signal);
-      if (searchUrl && page.articles.length === 0) {
-        try {
-          const indexPage = await fetchBoardPage(board, indexUrl, "ptt", budget, signal);
-          if (indexPage.articles.length > 0) page = indexPage;
-        } catch { /* keep search page */ }
+      const page = await fetchBoardPage(board, searchUrl, "ptt", budget, signal);
+      if (page.articles.length > 0) {
+        return { board, articles: page.articles, source: "ptt", nextUrl: page.nextUrl, warnings };
       }
-    } catch (searchErr) {
-      if (searchUrl && (searchErr instanceof PttNotFoundError || isFallbackEligible(searchErr))) {
-        page = await fetchBoardPage(board, indexUrl, "ptt", budget, signal);
-      } else {
-        throw searchErr;
+    } catch (err) {
+      if (isAbortError(err) || err instanceof SearchTimeoutError) throw err;
+    }
+  }
+
+  if (searchUrl && realtimePages > 0) {
+    try {
+      const page = await fetchBoardPage(board, searchUrl, "jina", budget, signal);
+      if (page.articles.length > 0) {
+        warnings.push(`[${board}] 看板已透過 Jina Reader 取得關鍵字搜尋結果。`);
+        return { board, articles: page.articles, source: "jina", nextUrl: page.nextUrl, warnings };
+      }
+    } catch (err) {
+      if (isAbortError(err) || err instanceof SearchTimeoutError) throw err;
+      if (isReaderQuotaFailure(err)) {
+        warnings.push(`[${board}] ${sourceFailureLabel("jina", err)}`);
       }
     }
+  }
+
+  try {
+    const page = await fetchBoardPage(board, indexUrl, "ptt", budget, signal);
     return { board, articles: page.articles, source: "ptt", nextUrl: page.nextUrl, warnings };
   } catch (nativeError) {
     if (nativeError instanceof PttNotFoundError) throw new PttBoardNotFoundError(`${board} 看板不存在或已刪除（HTTP 404）`);
@@ -439,22 +450,7 @@ async function fetchBoardLatest(board: string, realtimePages: number, budget: Re
     warnings.push(`[${board}] ${sourceFailureLabel("ptt", nativeError)}`);
     if (realtimePages > 0 && isFallbackEligible(nativeError)) {
       try {
-        let page: ListingPage;
-        try {
-          page = await fetchBoardPage(board, latestUrl, "jina", budget, signal);
-          if (searchUrl && page.articles.length === 0) {
-            try {
-              const indexPage = await fetchBoardPage(board, indexUrl, "jina", budget, signal);
-              if (indexPage.articles.length > 0) page = indexPage;
-            } catch { /* keep search page */ }
-          }
-        } catch (jinaSearchErr) {
-          if (searchUrl && (jinaSearchErr instanceof PttNotFoundError || isFallbackEligible(jinaSearchErr))) {
-            page = await fetchBoardPage(board, indexUrl, "jina", budget, signal);
-          } else {
-            throw jinaSearchErr;
-          }
-        }
+        const page = await fetchBoardPage(board, indexUrl, "jina", budget, signal);
         warnings.push(`[${board}] 看板最新頁已改用 Jina Reader。`);
         return { board, articles: page.articles, source: "jina", nextUrl: page.nextUrl, warnings };
       } catch (readerError) {
