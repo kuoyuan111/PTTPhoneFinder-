@@ -11,7 +11,7 @@ export interface Article {
   board: string;
   title: string;
   url: string;
-  source?: "ptt" | "pttweb";
+  source?: "ptt" | "jina" | "pttweb";
   author: string;
   listDate: string;
   publishedAt: string;

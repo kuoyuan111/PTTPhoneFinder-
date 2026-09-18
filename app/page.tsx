@@ -44,6 +44,12 @@ function formatPublished(value: string, fallback: string): string {
   }).format(date);
 }
 
+function sourceLabel(source: SearchResult["source"]): string {
+  if (source === "jina") return "即時中繼";
+  if (source === "pttweb") return "延遲鏡像";
+  return "PTT 直連";
+}
+
 function sortableValue(result: SearchResult, key: SortKey): string | number {
   if (key === "price") return result.price ?? Number.MAX_SAFE_INTEGER;
   if (key === "locations") return result.locations.join("、");
@@ -345,6 +351,7 @@ export default function HomePage() {
             <thead>
               <tr>
                 <th><button onClick={() => changeSort("board")}>{sortLabel("看板", "board")}</button></th>
+                <th>資料來源</th>
                 <th><button onClick={() => changeSort("publishedAt")}>{sortLabel("發文時間", "publishedAt")}</button></th>
                 <th><button onClick={() => changeSort("model")}>{sortLabel("型號", "model")}</button></th>
                 <th><button onClick={() => changeSort("storage")}>{sortLabel("容量", "storage")}</button></th>
@@ -360,6 +367,7 @@ export default function HomePage() {
               {visibleResults.map((result) => (
                 <tr key={result.url}>
                   <td><span className="board-badge">{result.board}</span></td>
+                  <td><span className={`source-badge ${result.source ?? "ptt"}`}>{sourceLabel(result.source)}</span></td>
                   <td className="date-cell">{formatPublished(result.publishedAt, result.listDate)}</td>
                   <td><strong>{result.model || "命中關鍵字"}</strong></td>
                   <td>{result.storage || "未知"}</td>
@@ -374,7 +382,7 @@ export default function HomePage() {
                 </tr>
               ))}
               {!visibleResults.length && (
-                <tr><td className="empty-state" colSpan={10}>{searching ? "正在搜尋 PTT…" : results.length ? "目前篩選條件沒有結果。" : "尚未搜尋，結果會顯示在這裡。"}</td></tr>
+                <tr><td className="empty-state" colSpan={11}>{searching ? "正在搜尋 PTT…" : results.length ? "目前篩選條件沒有結果。" : "尚未搜尋，結果會顯示在這裡。"}</td></tr>
               )}
             </tbody>
           </table>

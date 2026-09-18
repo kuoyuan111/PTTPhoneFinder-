@@ -4,16 +4,44 @@ import { classifyArticle, compactText, normalizeLocation } from "@/lib/classifie
 import type { Article, SearchRequest, SearchResponse } from "@/lib/types";
 
 const PTT_BASE = "https://www.ptt.cc";
+const JINA_READER_BASE = "https://r.jina.ai";
 const PTTWEB_BASE = "https://www.pttweb.cc";
 const REQUEST_DELAY_MS = 450;
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_CANDIDATES = 40;
 const CACHE_TTL_MS = 60_000;
+const REALTIME_CACHE_TTL_MS = 20_000;
+const JINA_REQUEST_BUDGET = 18;
+const JINA_LIST_PAGE_BUDGET = 8;
 
 const htmlCache = new Map<string, { expiresAt: number; html: string }>();
 
 export class PttBoardNotFoundError extends Error {}
 class PttAccessBlockedError extends Error {}
+class ReaderBudgetExceededError extends Error {}
+
+interface ReaderBudget {
+  remaining: number;
+}
+
+export function allocateRealtimePages(boardCount: number, requestedPages: number, pageBudget = JINA_LIST_PAGE_BUDGET): number[] {
+  if (boardCount <= 0 || requestedPages <= 0 || pageBudget <= 0) return [];
+  const allocation = Array<number>(boardCount).fill(0);
+  let remaining = Math.min(pageBudget, boardCount * requestedPages);
+  for (let page = 0; page < requestedPages && remaining > 0; page += 1) {
+    for (let board = 0; board < boardCount && remaining > 0; board += 1) {
+      allocation[board] += 1;
+      remaining -= 1;
+    }
+  }
+  return allocation;
+}
+
+export function toJinaReaderUrl(pttUrl: string): string {
+  const target = new URL(pttUrl);
+  if (target.origin !== PTT_BASE) throw new Error("拒絕透過即時中繼存取非 PTT 網址");
+  return `${JINA_READER_BASE}/http://${target.host}${target.pathname}${target.search}`;
+}
 
 function abortError(): Error {
   const error = new Error("搜尋已取消");
@@ -148,6 +176,55 @@ async function fetchMirrorHtml(url: string, signal?: AbortSignal): Promise<strin
   throw new Error(`PTTweb 連線失敗：${safeMessage(lastError)}`);
 }
 
+async function fetchReaderHtml(url: string, budget: ReaderBudget, signal?: AbortSignal): Promise<string> {
+  const target = new URL(url);
+  if (target.origin !== PTT_BASE) throw new Error("拒絕透過即時中繼存取非 PTT 網址");
+
+  const cacheKey = `reader:${target.href}`;
+  const cached = htmlCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.html;
+  if (budget.remaining <= 0) {
+    throw new ReaderBudgetExceededError("即時資料免費請求額度已用完，請縮小看板、頁數或關鍵字後重試");
+  }
+  budget.remaining -= 1;
+
+  if (signal?.aborted) throw abortError();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error("Jina Reader 連線逾時")), REQUEST_TIMEOUT_MS);
+  const relayAbort = () => controller.abort(abortError());
+  signal?.addEventListener("abort", relayAbort, { once: true });
+  try {
+    const response = await fetch(toJinaReaderUrl(target.href), {
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        Accept: "text/html",
+        "X-No-Cache": "true",
+        "X-Respond-With": "html",
+        "X-Timeout": "20",
+        "User-Agent":
+          "Mozilla/5.0 (compatible; PTT-Phone-Finder-Web/1.0; +https://github.com/kuoyuan111/PTTPhoneFinder-)",
+      },
+    });
+    if (response.status === 429) {
+      throw new ReaderBudgetExceededError("Jina Reader 即時資料服務目前達到匿名流量上限，請稍後再試");
+    }
+    if (response.status === 404) throw new PttBoardNotFoundError("看板或文章不存在（HTTP 404）");
+    if (!response.ok) throw new Error(`Jina Reader 回應 HTTP ${response.status}`);
+    const html = await response.text();
+    if (!/<html[\s>]/i.test(html)) throw new Error("Jina Reader 未回傳可解析的 PTT HTML");
+    htmlCache.set(cacheKey, { expiresAt: Date.now() + REALTIME_CACHE_TTL_MS, html });
+    return html;
+  } catch (error) {
+    if (signal?.aborted || isAbortError(error)) throw abortError();
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", relayAbort);
+  }
+}
+
 function pttUrl(href: string): string | null {
   try {
     const url = new URL(href, PTT_BASE);
@@ -157,21 +234,19 @@ function pttUrl(href: string): string | null {
   }
 }
 
-async function fetchBoardPages(board: string, pages: number, signal?: AbortSignal): Promise<Article[]> {
+async function fetchNativeBoardPages(
+  board: string,
+  pages: number,
+  source: "ptt" | "jina",
+  getHtml: (url: string, signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
+): Promise<Article[]> {
   let url = `${PTT_BASE}/bbs/${encodeURIComponent(board)}/index.html`;
   const articles: Article[] = [];
   const knownUrls = new Set<string>();
 
   for (let page = 0; page < pages; page += 1) {
-    let html: string;
-    try {
-      html = await fetchHtml(url, signal);
-    } catch (error) {
-      if (error instanceof PttAccessBlockedError && page === 0) {
-        return fetchMirrorBoardPages(board, pages, signal);
-      }
-      throw error;
-    }
+    const html = await getHtml(url, signal);
     const $ = cheerio.load(html);
     const entries = $("div.r-ent");
     if (!entries.length && $.root().text().includes("不存在")) {
@@ -190,7 +265,7 @@ async function fetchBoardPages(board: string, pages: number, signal?: AbortSigna
         board,
         title: anchor.text().replace(/\s+/g, " ").trim(),
         url: articleUrl,
-        source: "ptt",
+        source,
         author: entry.find("div.author").first().text().trim(),
         listDate: entry.find("div.date").first().text().trim(),
         publishedAt: "",
@@ -208,6 +283,33 @@ async function fetchBoardPages(board: string, pages: number, signal?: AbortSigna
     await sleep(REQUEST_DELAY_MS, signal);
   }
   return articles;
+}
+
+async function fetchBoardPages(
+  board: string,
+  pages: number,
+  realtimePages: number,
+  budget: ReaderBudget,
+  signal?: AbortSignal,
+): Promise<Article[]> {
+  try {
+    return await fetchNativeBoardPages(board, pages, "ptt", fetchHtml, signal);
+  } catch (error) {
+    if (!(error instanceof PttAccessBlockedError)) throw error;
+  }
+
+  try {
+    return await fetchNativeBoardPages(
+      board,
+      realtimePages,
+      "jina",
+      (url, nextSignal) => fetchReaderHtml(url, budget, nextSignal),
+      signal,
+    );
+  } catch (error) {
+    if (isAbortError(error) || error instanceof ReaderBudgetExceededError) throw error;
+    return fetchMirrorBoardPages(board, pages, signal);
+  }
 }
 
 async function fetchMirrorBoardPages(board: string, pages: number, signal?: AbortSignal): Promise<Article[]> {
@@ -268,16 +370,7 @@ async function fetchMirrorArticle(article: Article, signal?: AbortSignal): Promi
   return { ...article, source: "pttweb", content };
 }
 
-async function fetchArticle(article: Article, signal?: AbortSignal): Promise<Article> {
-  if (article.source === "pttweb") return fetchMirrorArticle(article, signal);
-
-  let html: string;
-  try {
-    html = await fetchHtml(article.url, signal);
-  } catch (error) {
-    if (error instanceof PttAccessBlockedError) return fetchMirrorArticle(article, signal);
-    throw error;
-  }
+function parseNativeArticleHtml(article: Article, html: string, source: "ptt" | "jina"): Article {
   const $ = cheerio.load(html);
   const main = $("#main-content").first();
   if (!main.length) throw new Error("找不到文章內容，PTT HTML 結構可能已變更");
@@ -294,8 +387,42 @@ async function fetchArticle(article: Article, signal?: AbortSignal): Promise<Art
   const [body, signature = ""] = rawText.split("※ 發信站:", 2);
   const edits = [...signature.matchAll(/※\s*編輯:[^\n]+/g)].map((match) => match[0]);
   const content = `${body.trim()}${edits.length ? `\n${edits.join("\n")}` : ""}`.slice(0, 18_000);
+  return { ...article, source, publishedAt, content };
+}
+
+async function fetchArticle(article: Article, budget: ReaderBudget, signal?: AbortSignal): Promise<Article> {
+  if (article.source === "pttweb") return fetchMirrorArticle(article, signal);
+
+  let html: string;
+  if (article.source === "jina") {
+    try {
+      html = await fetchReaderHtml(article.url, budget, signal);
+      const parsed = parseNativeArticleHtml(article, html, "jina");
+      await sleep(REQUEST_DELAY_MS, signal);
+      return parsed;
+    } catch (error) {
+      if (isAbortError(error) || error instanceof ReaderBudgetExceededError) throw error;
+      return fetchMirrorArticle(article, signal);
+    }
+  }
+
+  try {
+    html = await fetchHtml(article.url, signal);
+  } catch (error) {
+    if (!(error instanceof PttAccessBlockedError)) throw error;
+    try {
+      html = await fetchReaderHtml(article.url, budget, signal);
+      const parsed = parseNativeArticleHtml(article, html, "jina");
+      await sleep(REQUEST_DELAY_MS, signal);
+      return parsed;
+    } catch (readerError) {
+      if (isAbortError(readerError) || readerError instanceof ReaderBudgetExceededError) throw readerError;
+      return fetchMirrorArticle(article, signal);
+    }
+  }
+  const parsed = parseNativeArticleHtml(article, html, "ptt");
   await sleep(REQUEST_DELAY_MS, signal);
-  return { ...article, publishedAt, content };
+  return parsed;
 }
 
 function titleMatches(title: string, keywords: string[]): boolean {
@@ -317,20 +444,36 @@ export async function searchPtt(options: SearchRequest, signal?: AbortSignal): P
   const seenUrls = new Set<string>();
   let candidateCount = 0;
   let processedCandidates = 0;
+  let realtimeLimitWarned = false;
+  const readerBudget: ReaderBudget = { remaining: JINA_REQUEST_BUDGET };
+  const realtimePages = allocateRealtimePages(options.boards.length, options.pages);
 
-  boardLoop: for (const board of options.boards) {
+  boardLoop: for (const [boardIndex, board] of options.boards.entries()) {
     if (signal?.aborted) throw abortError();
     let articles: Article[];
     try {
-      articles = await fetchBoardPages(board, options.pages, signal);
+      articles = await fetchBoardPages(board, options.pages, realtimePages[boardIndex] ?? 1, readerBudget, signal);
     } catch (error) {
       if (isAbortError(error)) throw error;
+      if (error instanceof ReaderBudgetExceededError) {
+        warnings.push(safeMessage(error));
+        break;
+      }
       warnings.push(`[${board}] ${safeMessage(error)}`);
       continue;
     }
 
+    if (articles.some((article) => article.source === "jina")) {
+      warnings.push(`[${board}] PTT 阻擋 Vercel，已透過 Jina Reader 無快取中繼讀取即時資料。`);
+      if (!realtimeLimitWarned && (realtimePages[boardIndex] ?? 1) < options.pages) {
+        warnings.push(
+          `為避免超過即時服務匿名額度，本次將部分看板縮減為最新 ${realtimePages[boardIndex] ?? 1} 頁。`,
+        );
+        realtimeLimitWarned = true;
+      }
+    }
     if (articles.some((article) => article.source === "pttweb")) {
-      warnings.push(`[${board}] PTT 阻擋 Vercel 雲端連線，已改用 PTTweb 公開鏡像資料。`);
+      warnings.push(`[${board}] 即時中繼不可用，已改用可能延遲的 PTTweb 公開鏡像資料。`);
     }
 
     const candidates = articles.filter(
@@ -347,7 +490,7 @@ export async function searchPtt(options: SearchRequest, signal?: AbortSignal): P
       seenUrls.add(candidate.url);
       processedCandidates += 1;
       try {
-        const article = await fetchArticle(candidate, signal);
+        const article = await fetchArticle(candidate, readerBudget, signal);
         const result = classifyArticle(article, options.keywords);
         if (!options.includeSold && result.sold) continue;
         if (options.maxBudget && result.price !== null && result.price > options.maxBudget) continue;
@@ -358,6 +501,10 @@ export async function searchPtt(options: SearchRequest, signal?: AbortSignal): P
         results.push(result);
       } catch (error) {
         if (isAbortError(error)) throw error;
+        if (error instanceof ReaderBudgetExceededError) {
+          warnings.push(safeMessage(error));
+          break boardLoop;
+        }
         if (warnings.length < 12) warnings.push(`[${board}] ${candidate.title}：${safeMessage(error)}`);
       }
     }

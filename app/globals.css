@@ -117,8 +117,11 @@ tbody tr:hover td { background: #f6fbfa; }
 .title-cell a { color: var(--accent-dark); font-weight: 700; text-decoration: none; line-height: 1.5; }
 .title-cell a:hover { text-decoration: underline; }
 .condition-cell { min-width: 250px; color: #506173; line-height: 1.5; }
-.board-badge, .status-badge { display: inline-block; border-radius: 999px; padding: 4px 8px; font-weight: 750; white-space: nowrap; }
+.board-badge, .source-badge, .status-badge { display: inline-block; border-radius: 999px; padding: 4px 8px; font-weight: 750; white-space: nowrap; }
 .board-badge { background: #edf2f5; color: #405367; }
+.source-badge.ptt { background: #def3ec; color: #116748; }
+.source-badge.jina { background: #e1f0f7; color: #155d7b; }
+.source-badge.pttweb { background: #fff0d6; color: #8a5410; }
 .status-badge.active { background: #def3ec; color: #116748; }
 .status-badge.sold { background: #f7e5e3; color: #97443d; }
 .empty-state { padding: 70px 20px; text-align: center; color: var(--muted); font-size: .95rem; }

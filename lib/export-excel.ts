@@ -17,6 +17,7 @@ export async function buildResultsWorkbook(results: SearchResult[]): Promise<Arr
 
   sheet.columns = [
     { header: "來源看板", key: "board", width: 16 },
+    { header: "資料來源", key: "source", width: 14 },
     { header: "發文時間", key: "publishedAt", width: 22 },
     { header: "手機型號/命中關鍵字", key: "model", width: 25 },
     { header: "容量", key: "storage", width: 13 },
@@ -35,6 +36,7 @@ export async function buildResultsWorkbook(results: SearchResult[]): Promise<Arr
   for (const result of results) {
     const row = sheet.addRow({
       board: result.board,
+      source: result.source === "jina" ? "即時中繼" : result.source === "pttweb" ? "延遲鏡像" : "PTT 直連",
       publishedAt: parsedDate(result.publishedAt) || result.listDate,
       model: result.model,
       storage: result.storage,
@@ -57,7 +59,7 @@ export async function buildResultsWorkbook(results: SearchResult[]): Promise<Arr
   header.font = { bold: true, color: { argb: "FFFFFFFF" } };
   header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF17324D" } };
   header.alignment = { vertical: "middle", horizontal: "center" };
-  sheet.autoFilter = { from: "A1", to: `N${Math.max(sheet.rowCount, 1)}` };
+  sheet.autoFilter = { from: "A1", to: `O${Math.max(sheet.rowCount, 1)}` };
 
   sheet.getColumn("publishedAt").numFmt = "yyyy-mm-dd hh:mm:ss";
   sheet.getColumn("price").numFmt = "#,##0";

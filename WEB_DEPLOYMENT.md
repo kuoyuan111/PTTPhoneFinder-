@@ -26,7 +26,7 @@ Vercel CLI 會在本機產生 `.vercel/project.json`，內容是 project/org 識
 - 本機規則抽取價格、容量、顏色、地區及售出狀態
 - ExcelJS 在瀏覽器建立 `.xlsx` 下載檔
 - 不使用 Gemini、API Key 或資料庫
-- PTT 原站若封鎖 Vercel 出口（HTTP 403），會自動切換到 PTTweb 公開鏡像；結果頁會顯示資料來源提示
+- PTT 原站若封鎖 Vercel 出口（HTTP 403），會先透過 Jina Reader `X-No-Cache` 讀取原始 PTT HTML；只有即時中繼失敗時才切換到 PTTweb 公開鏡像
 
 ## 開發指令
 
@@ -150,12 +150,13 @@ git push
 ## 資料來源與連線行為
 
 1. API 優先向 `https://www.ptt.cc` 讀取看板與文章。
-2. PTT 若對 Vercel 出口回傳 HTTP 403，會自動改讀 `https://www.pttweb.cc` 公開鏡像。
-3. 使用備援時，搜尋結果會顯示提示；鏡像更新時間可能比 PTT 原站慢。
-4. 回傳給瀏覽器的原文連結仍指向 `www.ptt.cc`。
-5. 兩個來源都不可用時，API 會回傳警告，不會把失敗資料假裝成搜尋結果。
+2. PTT 若對 Vercel 出口回傳 HTTP 403，會透過 `https://r.jina.ai` 並使用 `X-No-Cache: true`、`X-Respond-With: html` 讀取最新原始 HTML。
+3. 匿名即時中繼目前按每次搜尋最多 18 個請求控制：最多 8 個列表頁，其餘保留給符合關鍵字的完整文章。看板多時會先公平分配每個看板最新一頁。
+4. Jina Reader 不可用或回傳非 HTML 時，才改讀 `https://www.pttweb.cc`；介面會標示「延遲鏡像」。
+5. 回傳給瀏覽器的原文連結仍指向 `www.ptt.cc`，Excel 也會記錄實際資料來源。
+6. 即時額度用完時，API 會明確停止並提示縮小看板、頁數或關鍵字，不會把舊資料偽裝成即時資料。
 
-允許的遠端來源直接寫在 `lib/ptt-crawler.ts`；新增來源時必須同時更新來源白名單、錯誤處理、安全說明與測試，不能接受使用者輸入任意抓取網址。
+允許的遠端來源直接寫在 `lib/ptt-crawler.ts`；Jina URL 只能由已驗證的 `www.ptt.cc` URL 組成。新增來源時必須同時更新來源白名單、錯誤處理、安全說明與測試，不能接受使用者輸入任意抓取網址。
 
 ## 更新與回復
 
@@ -175,7 +176,7 @@ npm audit --audit-level=moderate
 ## 常見問題
 
 - `unable to get local issuer certificate`：在目前 PowerShell 設定 `$env:NODE_OPTIONS="--use-system-ca"` 後重試。
-- Vercel 顯示 PTT HTTP 403：這是預期的雲端出口限制，確認結果頁已顯示 PTTweb 備援提示且仍有結果。
+- Vercel 顯示 PTT HTTP 403：這是預期的雲端出口限制；正常應顯示「Jina Reader 無快取中繼」並取得今天最新文章。只有中繼失敗時才應顯示 PTTweb 延遲鏡像。
 - Vercel 無法連接 GitHub repository：確認登入帳號具有 repository 權限，並在 GitHub Vercel App 中授權該 repository。
 - 專案名稱格式錯誤：Vercel project 固定使用小寫 `ptt-phone-finder`。
 - 正式網址沒有更新：確認部署目標是既有 project `owen123/ptt-phone-finder`，並確認 deployment 已標示 `Production`、alias 指向 `ptt-phone-finder.vercel.app`。

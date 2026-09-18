@@ -5,6 +5,7 @@ import type { SearchResult } from "@/lib/types";
 
 const result: SearchResult = {
   board: "MacShop",
+  source: "jina",
   title: "[販售] iPhone 16 Pro 256G",
   url: "https://www.ptt.cc/bbs/MacShop/M.123.A.456.html",
   author: "seller",
@@ -33,11 +34,12 @@ describe("Excel export", () => {
 
     expect(buffer.byteLength).toBeGreaterThan(1_000);
     expect(sheet).toBeDefined();
-    expect(sheet?.getRow(2).getCell(5).value).toBe(27_500);
-    expect(sheet?.getRow(2).getCell(12).value).toMatchObject({
+    expect(sheet?.getRow(2).getCell(2).value).toBe("即時中繼");
+    expect(sheet?.getRow(2).getCell(6).value).toBe(27_500);
+    expect(sheet?.getRow(2).getCell(13).value).toMatchObject({
       text: "開啟 PTT 原文",
       hyperlink: result.url,
     });
-    expect(sheet?.getRow(2).getCell(14).value).toBe(result.content);
+    expect(sheet?.getRow(2).getCell(15).value).toBe(result.content);
   });
 });
