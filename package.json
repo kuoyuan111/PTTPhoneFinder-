@@ -5,8 +5,8 @@
   "type": "module",
   "description": "PTT 二手手機網頁搜尋工具",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "node scripts/run-next.mjs dev",
+    "build": "node scripts/run-next.mjs build",
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",

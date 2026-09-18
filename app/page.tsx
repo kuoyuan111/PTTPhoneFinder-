@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useReducer, useState } from "react";
 
 import { formatArticleTimeTaiwan } from "@/lib/article-time";
+import { BUILD_VERSION_LABEL } from "@/lib/build-version";
 import {
   createSearchRequestGate, DEFAULT_SORT, emptyResultsMessage, emptySearchView,
   searchViewReducer, selectVisibleResults, validBoardName, validKeyword,
@@ -96,6 +97,11 @@ export default function HomePage() {
       setError("請至少選擇一個看板；每個關鍵字需包含英數字或中文字，不能只有標點符號。");
       return;
     }
+    const budgetValue = maxBudget.trim() ? Number(maxBudget) : null;
+    if (budgetValue !== null && (!Number.isFinite(budgetValue) || budgetValue < 0)) {
+      setError("預算金額必須為有效的正整數。");
+      return;
+    }
 
     const controller = requests.start();
     dispatch({ type: "start", boardCount: boards.length });
@@ -109,7 +115,7 @@ export default function HomePage() {
         body: JSON.stringify({
           boards,
           keywords: keywordValues,
-          maxBudget: maxBudget.trim() ? Number(maxBudget) : null,
+          maxBudget: budgetValue,
           locations: splitValues(locations),
           pages,
           includeSold,
@@ -351,6 +357,7 @@ export default function HomePage() {
 
       <footer>
         <p>本工具只整理 PTT 公開文章，不保存搜尋內容。請確認商品資訊並注意交易安全。</p>
+        <p className="build-version" aria-label={`版本 ${BUILD_VERSION_LABEL}`}>版本 {BUILD_VERSION_LABEL}</p>
       </footer>
     </main>
   );

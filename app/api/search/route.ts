@@ -6,7 +6,7 @@ import { validSearchKeyword } from "../../../lib/search-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 const SearchSchema = z.object({
   boards: z
@@ -93,7 +93,10 @@ async function readJson(request: Request): Promise<unknown> {
       const { done, value } = await reader.read();
       if (done) break;
       byteLength += value.byteLength;
-      if (byteLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError();
+      if (byteLength > MAX_BODY_BYTES) {
+        await reader.cancel();
+        throw new RequestBodyTooLargeError();
+      }
       chunks.push(value);
     }
   } finally {

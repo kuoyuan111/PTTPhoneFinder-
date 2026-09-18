@@ -10,6 +10,8 @@
 
 目前正式站：<https://ptt-phone-finder.vercel.app>
 
+頁尾會顯示本次網站建置的版本時間，格式為 `YYYY.MM.DD-HH:mm:ss（台灣時間）`。每次執行 `npm run build` 或 Vercel production deployment 都會自動產生新的版本時間，不需要手動修改版本字串；本機 `npm run dev` 也會顯示啟動時的版本時間。
+
 ### 本機啟動網頁版
 
 需要 Node.js 24.x（與 `package.json` 的 engines 設定一致）：

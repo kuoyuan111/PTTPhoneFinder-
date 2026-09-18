@@ -16,6 +16,8 @@
 | 目前部署方式 | 已由本機 Vercel CLI 連結並直接部署 |
 | GitHub 自動部署 | 尚未連接；需在 Vercel 授權 GitHub repository 後才會啟用 |
 
+網站頁尾會顯示自動產生的建置版本，例如 `2026.09.18-18:30:45（台灣時間）`。版本由 `scripts/run-next.mjs` 在 `npm run build`／Vercel production build 時產生，格式是 `YYYY.MM.DD-HH:mm:ss`；不需要設定環境變數，也不應手動修改版本字串。`npm run dev` 會顯示開發伺服器啟動時的版本時間。
+
 Vercel CLI 會在本機產生 `.vercel/project.json`，內容是 project/org 識別資訊。`.vercel/` 已加入 `.gitignore`，不應 commit；換電腦時使用 `vercel link` 重新產生即可。Vercel 登入憑證及 Token 也不得放進 repository。
 
 ## 技術架構

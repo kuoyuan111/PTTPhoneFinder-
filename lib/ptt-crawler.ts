@@ -8,7 +8,7 @@ const JINA_READER_BASE = "https://r.jina.ai";
 const PTTWEB_BASE = "https://www.pttweb.cc";
 const REQUEST_DELAY_MS = 450;
 const REQUEST_TIMEOUT_MS = 20_000;
-const SEARCH_TIMEOUT_MS = 120_000;
+const SEARCH_TIMEOUT_MS = 50_000;
 const MAX_CANDIDATES = 40;
 const CACHE_TTL_MS = 20_000;
 const JINA_REQUEST_BUDGET = 18;
@@ -590,7 +590,7 @@ export async function searchPtt(options: SearchRequest, signal?: AbortSignal): P
   const realtimePages = allocateRealtimePages(boards.length, options.pages);
   if (!boards.length) return { results, candidateCount: 0, elapsedMs: 0, warnings: ["至少需要一個 PTT 看板"] };
   const searchController = new AbortController();
-  const timeoutReason = new SearchTimeoutError("搜尋已達 120 秒上限，已回傳目前累積結果");
+  const timeoutReason = new SearchTimeoutError("搜尋已達 50 秒上限，已回傳目前累積結果");
   const timer = setTimeout(() => searchController.abort(timeoutReason), SEARCH_TIMEOUT_MS);
   const relayAbort = () => searchController.abort(abortError());
   signal?.addEventListener("abort", relayAbort, { once: true });
