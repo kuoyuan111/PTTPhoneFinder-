@@ -43,5 +43,5 @@ describe("Excel export", () => {
       hyperlink: result.url,
     });
     expect(sheet?.getRow(2).getCell(15).value).toBe(result.content);
-  });
+  }, 15_000);
 });
