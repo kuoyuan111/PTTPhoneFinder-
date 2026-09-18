@@ -1,8 +1,57 @@
 # PTT 二手手機搜尋工具
 
-這是一個 Windows 桌面 GUI 工具。預設使用純 Python 關鍵字搜尋 PTT 看板，下載命中文章內文後整理價格、容量、顏色與售出狀態，完全不需要 Gemini；結果可直接匯出 Excel。
+這個專案同時提供網頁版與原有 Windows 桌面版。兩個版本都能搜尋 PTT 看板，下載命中文章內文後整理價格、容量、顏色、地區與售出狀態，完全不需要 Gemini；結果可直接匯出 Excel。
 
 本版本是手動單次搜尋，不包含定時監控、LINE、Email 或其他通知。
+
+## 網頁版（推薦）
+
+網頁版以 Next.js 與 TypeScript 開發，可從 GitHub 直接部署到 Vercel。開啟網站後即可搜尋，不需要安裝 Python、桌面程式或 API Key。
+
+目前正式站：<https://ptt-phone-finder.vercel.app>
+
+### 本機啟動網頁版
+
+需要 Node.js 24 或更新版本：
+
+```powershell
+npm install
+npm run dev
+```
+
+然後開啟：
+
+```text
+http://localhost:3000
+```
+
+若公司 Windows 環境的 HTTPS 憑證檢查造成 PTT 連線失敗，可改用：
+
+```powershell
+$env:NODE_OPTIONS="--use-system-ca"
+npm run dev
+```
+
+### 部署到 Vercel
+
+1. 使用 GitHub 帳號登入 <https://vercel.com>。
+2. 選擇 `Add New Project`。
+3. 匯入此 GitHub repository。
+4. Vercel 會自動辨識 Next.js，不需要設定環境變數。
+5. 按下 `Deploy`，完成後會取得 `https://專案名稱.vercel.app` 網址。
+
+部署、GitHub/Vercel 連線、驗證、回復及日後維護方式，請參閱 [`WEB_DEPLOYMENT.md`](WEB_DEPLOYMENT.md)。
+
+### 網頁版限制
+
+- 最多同時搜尋 6 個看板。
+- 每個看板最多搜尋最近 5 頁。
+- 每次最多下載分析 40 篇候選文章。
+- 同一來源五分鐘最多啟動 8 次搜尋。
+- 搜尋與分類均為規則判斷，特殊文章格式仍應開啟 PTT 原文確認。
+- PTT 會阻擋部分雲端主機；原站回傳 HTTP 403 時，網站會改讀 PTTweb 公開鏡像並顯示提示。鏡像更新時間可能比原站慢。
+
+## Windows 桌面版
 
 ## 建議安裝位置
 
@@ -46,7 +95,10 @@ iPhone 16 Pro, iPhone 16 Pro Max
 
 ## 專案檔案
 
-- `main.py`：主程式。
+- `app/`：Next.js 網頁與搜尋 API。
+- `lib/`：PTT 爬蟲、規則分類與 Excel 匯出。
+- `package.json`：網頁版套件與執行指令。
+- `main.py`：Windows 桌面版主程式。
 - `requirements.txt`：Python 套件清單。
 - `setup_windows.bat`：第一次安裝用。
 - `run_windows.bat`：日後啟動程式用。
