@@ -115,6 +115,38 @@ COMMON_IPHONE_MODELS = [
     "iPhone 13",
     "iPhone SE",
 ]
+DEFAULT_BUDGET = 36_000
+DEFAULT_LOCATION = "新竹"
+COMMON_LOCATIONS = [
+    "-- 快速選入常用地區 --",
+    # 常用熱門
+    "新竹",
+    "雙北",
+    "台北",
+    "新北",
+    "桃園",
+    "台中",
+    "台南",
+    "高雄",
+    "全國",
+    # 北部
+    "基隆",
+    "宜蘭",
+    # 中部
+    "苗栗",
+    "彰化",
+    "南投",
+    "雲林",
+    # 南部
+    "嘉義",
+    "屏東",
+    # 東部與離島
+    "花蓮",
+    "台東",
+    "澎湖",
+    "金門",
+    "馬祖",
+]
 
 
 class _DataBlob(ctypes.Structure):
@@ -1069,12 +1101,26 @@ class MainWindow(QMainWindow):
 
         self.budget_spin = QSpinBox()
         self.budget_spin.setRange(0, 10_000_000)
-        self.budget_spin.setValue(30_000)
+        self.budget_spin.setValue(DEFAULT_BUDGET)
         self.budget_spin.setSingleStep(1_000)
         self.budget_spin.setSpecialValueText("不限")
         self.budget_spin.setSuffix(" 元")
-        self.location_edit = QLineEdit("台北, 新竹")
+
+        self.location_edit = QLineEdit(DEFAULT_LOCATION)
         self.location_edit.setPlaceholderText("留空代表不限地區")
+        self.location_combo = QComboBox()
+        self.location_combo.addItems(COMMON_LOCATIONS)
+        self.location_combo.activated.connect(self._on_location_preset_selected)
+        self.add_location_button = QPushButton("＋ 加入")
+        self.add_location_button.setToolTip("將下拉選單選取的地區追加到地區欄位")
+        self.add_location_button.clicked.connect(self._on_add_location_preset)
+
+        location_layout = QHBoxLayout()
+        location_layout.setContentsMargins(0, 0, 0, 0)
+        location_layout.addWidget(self.location_edit, 3)
+        location_layout.addWidget(self.location_combo, 2)
+        location_layout.addWidget(self.add_location_button, 0)
+
         self.pages_spin = QSpinBox()
         self.pages_spin.setRange(1, 20)
         self.pages_spin.setValue(3)
@@ -1085,7 +1131,7 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(QLabel("最高預算（AI 模式）"), 5, 2)
         settings_layout.addWidget(self.budget_spin, 5, 3)
         settings_layout.addWidget(QLabel("限定地區（AI 模式）"), 6, 0)
-        settings_layout.addWidget(self.location_edit, 6, 1)
+        settings_layout.addLayout(location_layout, 6, 1)
         settings_layout.addWidget(QLabel("搜尋最新頁數"), 6, 2)
         settings_layout.addWidget(self.pages_spin, 6, 3)
 
@@ -1231,6 +1277,24 @@ class MainWindow(QMainWindow):
         existing = [item.strip() for item in split_filter_values(current) if item.strip()]
         if model not in existing:
             self.keyword_edit.setText(f"{current}, {model}" if current else model)
+
+    def _on_location_preset_selected(self, index: int) -> None:
+        if index <= 0:
+            return
+        loc = self.location_combo.currentText()
+        if loc:
+            self.location_edit.setText(loc)
+
+    def _on_add_location_preset(self) -> None:
+        if self.location_combo.currentIndex() <= 0:
+            return
+        loc = self.location_combo.currentText()
+        if not loc:
+            return
+        current = self.location_edit.text().strip()
+        existing = [item.strip() for item in split_filter_values(current) if item.strip()]
+        if loc not in existing:
+            self.location_edit.setText(f"{current}, {loc}" if current else loc)
 
     def start_search(self) -> None:
         if self.worker and self.worker.isRunning():

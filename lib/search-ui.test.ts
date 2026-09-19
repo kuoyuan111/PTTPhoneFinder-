@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   appendKeyword,
+  appendLocation,
   COMMON_IPHONE_MODELS,
+  COMMON_LOCATIONS,
   createSearchRequestGate,
+  DEFAULT_BUDGET,
   DEFAULT_KEYWORD,
+  DEFAULT_LOCATION,
   DEFAULT_SORT,
   emptyResultsMessage,
   emptySearchView,
@@ -103,5 +107,22 @@ describe("search UI state", () => {
     expect(appendKeyword("iPhone 17 Pro Max", "iPhone 16 Pro")).toBe("iPhone 17 Pro Max, iPhone 16 Pro");
     expect(appendKeyword("iPhone 17 Pro Max, iPhone 16 Pro", "iPhone 17 Pro Max")).toBe("iPhone 17 Pro Max, iPhone 16 Pro");
     expect(appendKeyword("iPhone 17 Pro Max", "")).toBe("iPhone 17 Pro Max");
+  });
+
+  it("provides default budget 36000, default location 新竹, and location presets", () => {
+    expect(DEFAULT_BUDGET).toBe("36000");
+    expect(DEFAULT_LOCATION).toBe("新竹");
+    expect(COMMON_LOCATIONS.some((g) => g.group.includes("常用"))).toBe(true);
+    expect(COMMON_LOCATIONS.some((g) => g.group.includes("北部"))).toBe(true);
+    expect(COMMON_LOCATIONS.some((g) => g.group.includes("中部"))).toBe(true);
+    expect(COMMON_LOCATIONS.some((g) => g.group.includes("南部"))).toBe(true);
+    expect(COMMON_LOCATIONS.some((g) => g.group.includes("東部"))).toBe(true);
+  });
+
+  it("appends location without duplication", () => {
+    expect(appendLocation("", "新竹")).toBe("新竹");
+    expect(appendLocation("新竹", "台北")).toBe("新竹, 台北");
+    expect(appendLocation("新竹, 台北", "新竹")).toBe("新竹, 台北");
+    expect(appendLocation("新竹", "")).toBe("新竹");
   });
 });

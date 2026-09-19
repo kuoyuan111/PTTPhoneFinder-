@@ -75,6 +75,48 @@ export function appendKeyword(current: string, next: string): string {
   return current.trim() ? `${current.trim()}, ${trimmedNext}` : trimmedNext;
 }
 
+export const DEFAULT_BUDGET = "36000";
+export const DEFAULT_LOCATION = "新竹";
+
+export interface CommonLocationGroup {
+  readonly group: string;
+  readonly locations: readonly string[];
+}
+
+export const COMMON_LOCATIONS: readonly CommonLocationGroup[] = [
+  {
+    group: "常用熱門 / 全國",
+    locations: ["新竹", "雙北", "台北", "新北", "台中", "高雄", "台南", "桃園", "全國"],
+  },
+  {
+    group: "北部地區",
+    locations: ["新竹", "台北", "新北", "雙北", "桃園", "基隆", "宜蘭"],
+  },
+  {
+    group: "中部地區",
+    locations: ["台中", "苗栗", "彰化", "南投", "雲林"],
+  },
+  {
+    group: "南部地區",
+    locations: ["台南", "高雄", "嘉義", "屏東"],
+  },
+  {
+    group: "東部與離島",
+    locations: ["花蓮", "台東", "澎湖", "金門", "馬祖"],
+  },
+] as const;
+
+export function appendLocation(current: string, next: string): string {
+  const trimmedNext = next.trim();
+  if (!trimmedNext) return current;
+  const existing = current
+    .split(/[,，;；\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (existing.includes(trimmedNext)) return current;
+  return current.trim() ? `${current.trim()}, ${trimmedNext}` : trimmedNext;
+}
+
 export function validBoardName(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(value);
 }

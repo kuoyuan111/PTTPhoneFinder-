@@ -6,9 +6,13 @@ import { formatArticleTimeTaiwan } from "@/lib/article-time";
 import { BUILD_VERSION_LABEL } from "@/lib/build-version";
 import {
   appendKeyword,
+  appendLocation,
   COMMON_IPHONE_MODELS,
+  COMMON_LOCATIONS,
   createSearchRequestGate,
+  DEFAULT_BUDGET,
   DEFAULT_KEYWORD,
+  DEFAULT_LOCATION,
   DEFAULT_SORT,
   emptyResultsMessage,
   emptySearchView,
@@ -45,8 +49,9 @@ export default function HomePage() {
   const [customBoards, setCustomBoards] = useState("");
   const [keywords, setKeywords] = useState(DEFAULT_KEYWORD);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_KEYWORD);
-  const [maxBudget, setMaxBudget] = useState("30000");
-  const [locations, setLocations] = useState("");
+  const [maxBudget, setMaxBudget] = useState(DEFAULT_BUDGET);
+  const [locations, setLocations] = useState(DEFAULT_LOCATION);
+  const [selectedLocationPreset, setSelectedLocationPreset] = useState(DEFAULT_LOCATION);
   const [pages, setPages] = useState(3);
   const [includeSold, setIncludeSold] = useState(false);
   const [view, dispatch] = useReducer(searchViewReducer, undefined, emptySearchView);
@@ -309,6 +314,110 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+            <div className="field span-two">
+              <div className="field-header-row">
+                <label htmlFor="locations-input">限定地區</label>
+                <span className="field-header-tip">多個地區用逗號分隔；留空不限</span>
+              </div>
+              <div className="keyword-control-group">
+                <input
+                  id="locations-input"
+                  value={locations}
+                  onChange={(event) => setLocations(event.target.value)}
+                  placeholder="例如：新竹, 台北（留空代表不限地區）"
+                  disabled={searching}
+                />
+                <div className="preset-select-row">
+                  <select
+                    aria-label="快速選入常見地區"
+                    value={selectedLocationPreset}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setSelectedLocationPreset(val);
+                      if (val) {
+                        setLocations(val);
+                      }
+                    }}
+                    disabled={searching}
+                  >
+                    <option value="">▼ 下拉選單：快速選入常見地區（新竹 / 雙北 / 台中 / 高雄等）</option>
+                    {COMMON_LOCATIONS.map((group) => (
+                      <optgroup key={group.group} label={group.group}>
+                        {group.locations.map((loc) => (
+                          <option key={loc} value={loc}>
+                            {loc}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    title="將下拉選取的地區加入清單（不覆蓋已有地區）"
+                    disabled={searching || !selectedLocationPreset}
+                    onClick={() => {
+                      if (!selectedLocationPreset) return;
+                      setLocations((current) => appendLocation(current, selectedLocationPreset));
+                    }}
+                  >
+                    ＋ 加入
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn secondary"
+                    title="恢復預設地區 新竹"
+                    disabled={searching}
+                    onClick={() => {
+                      setLocations(DEFAULT_LOCATION);
+                      setSelectedLocationPreset(DEFAULT_LOCATION);
+                    }}
+                  >
+                    重設預設
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn secondary"
+                    title="清空地區（不限制地區）"
+                    disabled={searching || !locations}
+                    onClick={() => {
+                      setLocations("");
+                      setSelectedLocationPreset("");
+                    }}
+                  >
+                    不限地區
+                  </button>
+                </div>
+                <div className="quick-tags-row">
+                  <span className="quick-tags-label">熱門地區：</span>
+                  {["新竹", "雙北", "台北", "台中", "高雄"].map((loc) => (
+                    <button
+                      key={loc}
+                      type="button"
+                      className={`quick-tag ${locations === loc ? "active" : ""}`}
+                      disabled={searching}
+                      onClick={() => {
+                        setLocations(loc);
+                        setSelectedLocationPreset(loc);
+                      }}
+                    >
+                      {loc}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={`quick-tag ${!locations ? "active" : ""}`}
+                    disabled={searching}
+                    onClick={() => {
+                      setLocations("");
+                      setSelectedLocationPreset("");
+                    }}
+                  >
+                    不限
+                  </button>
+                </div>
+              </div>
+            </div>
             <label className="field">
               <span>最高預算</span>
               <div className="input-suffix">
@@ -326,21 +435,12 @@ export default function HomePage() {
               </div>
             </label>
             <label className="field">
-              <span>限定地區</span>
-              <input
-                value={locations}
-                onChange={(event) => setLocations(event.target.value)}
-                placeholder="例如：台北, 新竹"
-                disabled={searching}
-              />
-            </label>
-            <label className="field">
               <span>每個看板搜尋頁數</span>
               <select value={pages} onChange={(event) => setPages(Number(event.target.value))} disabled={searching}>
                 {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} 頁</option>)}
               </select>
             </label>
-            <label className="inline-check">
+            <label className="inline-check span-four">
               <input
                 type="checkbox"
                 checked={includeSold}
