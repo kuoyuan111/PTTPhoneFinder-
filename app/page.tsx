@@ -5,9 +5,19 @@ import { FormEvent, useEffect, useMemo, useReducer, useState } from "react";
 import { formatArticleTimeTaiwan } from "@/lib/article-time";
 import { BUILD_VERSION_LABEL } from "@/lib/build-version";
 import {
-  createSearchRequestGate, DEFAULT_SORT, emptyResultsMessage, emptySearchView,
-  searchViewReducer, selectVisibleResults, validBoardName, validKeyword,
-  type SortKey, type SortState,
+  appendKeyword,
+  COMMON_IPHONE_MODELS,
+  createSearchRequestGate,
+  DEFAULT_KEYWORD,
+  DEFAULT_SORT,
+  emptyResultsMessage,
+  emptySearchView,
+  searchViewReducer,
+  selectVisibleResults,
+  validBoardName,
+  validKeyword,
+  type SortKey,
+  type SortState,
 } from "@/lib/search-ui";
 import { downloadResultsExcel } from "@/lib/export-excel";
 import { DEFAULT_BOARDS, type SearchResponse, type SearchResult } from "@/lib/types";
@@ -33,7 +43,8 @@ function sourceLabel(source: SearchResult["source"]): string {
 export default function HomePage() {
   const [selectedBoards, setSelectedBoards] = useState<string[]>(["MacShop", "mobilesales"]);
   const [customBoards, setCustomBoards] = useState("");
-  const [keywords, setKeywords] = useState("iPhone 16 Pro");
+  const [keywords, setKeywords] = useState(DEFAULT_KEYWORD);
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_KEYWORD);
   const [maxBudget, setMaxBudget] = useState("30000");
   const [locations, setLocations] = useState("");
   const [pages, setPages] = useState(3);
@@ -216,16 +227,88 @@ export default function HomePage() {
                 disabled={searching}
               />
             </label>
-            <label className="field span-two">
-              <span>手機型號／關鍵字</span>
-              <input
-                value={keywords}
-                onChange={(event) => setKeywords(event.target.value)}
-                placeholder="多個關鍵字用逗號分隔"
-                required
-                disabled={searching}
-              />
-            </label>
+            <div className="field span-two">
+              <div className="field-header-row">
+                <label htmlFor="keywords-input">手機型號／關鍵字</label>
+                <span className="field-header-tip">多個型號請用逗號分隔</span>
+              </div>
+              <div className="keyword-control-group">
+                <input
+                  id="keywords-input"
+                  value={keywords}
+                  onChange={(event) => setKeywords(event.target.value)}
+                  placeholder="例如：iPhone 17 Pro Max（多個關鍵字用逗號分隔）"
+                  required
+                  disabled={searching}
+                />
+                <div className="preset-select-row">
+                  <select
+                    aria-label="快速選入常見 iPhone 型號"
+                    value={selectedModel}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setSelectedModel(val);
+                      if (val) {
+                        setKeywords(val);
+                      }
+                    }}
+                    disabled={searching}
+                  >
+                    <option value="">▼ 下拉選單：快速選入常見 iPhone 型號（18 / 17 / 16 / 15 系列）</option>
+                    {COMMON_IPHONE_MODELS.map((group) => (
+                      <optgroup key={group.group} label={group.group}>
+                        {group.models.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    title="將下拉選取的型號加入到關鍵字欄位（不覆蓋已有型號）"
+                    disabled={searching || !selectedModel}
+                    onClick={() => {
+                      if (!selectedModel) return;
+                      setKeywords((current) => appendKeyword(current, selectedModel));
+                    }}
+                  >
+                    ＋ 加入
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn secondary"
+                    title="恢復預設型號 iPhone 17 Pro Max"
+                    disabled={searching}
+                    onClick={() => {
+                      setKeywords(DEFAULT_KEYWORD);
+                      setSelectedModel(DEFAULT_KEYWORD);
+                    }}
+                  >
+                    重設預設
+                  </button>
+                </div>
+                <div className="quick-tags-row">
+                  <span className="quick-tags-label">熱門快選：</span>
+                  {["iPhone 17 Pro Max", "iPhone 17 Pro", "iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 15 Pro"].map((model) => (
+                    <button
+                      key={model}
+                      type="button"
+                      className={`quick-tag ${keywords === model ? "active" : ""}`}
+                      disabled={searching}
+                      onClick={() => {
+                        setKeywords(model);
+                        setSelectedModel(model);
+                      }}
+                    >
+                      {model.replace("iPhone ", "")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
             <label className="field">
               <span>最高預算</span>
               <div className="input-suffix">

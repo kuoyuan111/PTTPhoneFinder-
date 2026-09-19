@@ -7,6 +7,73 @@ export { validSearchKeyword } from "./search-validation";
 export type SortKey = "board" | "publishedAt" | "model" | "storage" | "price" | "color" | "soldStatus" | "locations" | "title";
 export type SortState = { key: SortKey; direction: "asc" | "desc" };
 export const DEFAULT_SORT: SortState = { key: "publishedAt", direction: "desc" };
+export const DEFAULT_KEYWORD = "iPhone 17 Pro Max";
+
+export interface CommonModelGroup {
+  readonly group: string;
+  readonly models: readonly string[];
+}
+
+export const COMMON_IPHONE_MODELS: readonly CommonModelGroup[] = [
+  {
+    group: "iPhone 18 系列",
+    models: [
+      "iPhone 18 Pro Max",
+      "iPhone 18 Pro",
+      "iPhone 18 Plus",
+      "iPhone 18",
+    ],
+  },
+  {
+    group: "iPhone 17 系列",
+    models: [
+      "iPhone 17 Pro Max",
+      "iPhone 17 Pro",
+      "iPhone 17 Air",
+      "iPhone 17",
+    ],
+  },
+  {
+    group: "iPhone 16 系列",
+    models: [
+      "iPhone 16 Pro Max",
+      "iPhone 16 Pro",
+      "iPhone 16 Plus",
+      "iPhone 16",
+    ],
+  },
+  {
+    group: "iPhone 15 系列",
+    models: [
+      "iPhone 15 Pro Max",
+      "iPhone 15 Pro",
+      "iPhone 15 Plus",
+      "iPhone 15",
+    ],
+  },
+  {
+    group: "iPhone 14 / 13 / SE 系列",
+    models: [
+      "iPhone 14 Pro Max",
+      "iPhone 14 Pro",
+      "iPhone 14",
+      "iPhone 13 Pro",
+      "iPhone 13",
+      "iPhone SE",
+    ],
+  },
+] as const;
+
+export function appendKeyword(current: string, next: string): string {
+  const trimmedNext = next.trim();
+  if (!trimmedNext) return current;
+  const existing = current
+    .split(/[,，;；\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (existing.includes(trimmedNext)) return current;
+  return current.trim() ? `${current.trim()}, ${trimmedNext}` : trimmedNext;
+}
 
 export function validBoardName(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(value);

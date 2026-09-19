@@ -84,6 +84,37 @@ GEMINI_MODELS = [
     ("gemini-1.5-flash", "gemini-1.5-flash"),
     ("gemini-1.5-pro", "gemini-1.5-pro"),
 ]
+DEFAULT_KEYWORD = "iPhone 17 Pro Max"
+COMMON_IPHONE_MODELS = [
+    "-- 快速選入常見 iPhone 型號 --",
+    # iPhone 18 系列
+    "iPhone 18 Pro Max",
+    "iPhone 18 Pro",
+    "iPhone 18 Plus",
+    "iPhone 18",
+    # iPhone 17 系列
+    "iPhone 17 Pro Max",
+    "iPhone 17 Pro",
+    "iPhone 17 Air",
+    "iPhone 17",
+    # iPhone 16 系列
+    "iPhone 16 Pro Max",
+    "iPhone 16 Pro",
+    "iPhone 16 Plus",
+    "iPhone 16",
+    # iPhone 15 系列
+    "iPhone 15 Pro Max",
+    "iPhone 15 Pro",
+    "iPhone 15 Plus",
+    "iPhone 15",
+    # 常用經典
+    "iPhone 14 Pro Max",
+    "iPhone 14 Pro",
+    "iPhone 14",
+    "iPhone 13 Pro",
+    "iPhone 13",
+    "iPhone SE",
+]
 
 
 class _DataBlob(ctypes.Structure):
@@ -1021,8 +1052,21 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(QLabel("自訂看板"), 4, 0)
         settings_layout.addWidget(self.custom_boards_edit, 4, 1, 1, 3)
 
-        self.keyword_edit = QLineEdit("iPhone 16 Pro")
+        self.keyword_edit = QLineEdit(DEFAULT_KEYWORD)
         self.keyword_edit.setPlaceholderText("多個型號可用逗號分隔")
+        self.model_combo = QComboBox()
+        self.model_combo.addItems(COMMON_IPHONE_MODELS)
+        self.model_combo.activated.connect(self._on_model_preset_selected)
+        self.add_model_button = QPushButton("＋ 加入")
+        self.add_model_button.setToolTip("將下拉選單選取的型號加入關鍵字欄位")
+        self.add_model_button.clicked.connect(self._on_add_model_preset)
+
+        keyword_layout = QHBoxLayout()
+        keyword_layout.setContentsMargins(0, 0, 0, 0)
+        keyword_layout.addWidget(self.keyword_edit, 3)
+        keyword_layout.addWidget(self.model_combo, 2)
+        keyword_layout.addWidget(self.add_model_button, 0)
+
         self.budget_spin = QSpinBox()
         self.budget_spin.setRange(0, 10_000_000)
         self.budget_spin.setValue(30_000)
@@ -1037,7 +1081,7 @@ class MainWindow(QMainWindow):
         self.pages_spin.setSuffix(" 頁 / 看板")
 
         settings_layout.addWidget(QLabel("手機型號 / 關鍵字"), 5, 0)
-        settings_layout.addWidget(self.keyword_edit, 5, 1)
+        settings_layout.addLayout(keyword_layout, 5, 1)
         settings_layout.addWidget(QLabel("最高預算（AI 模式）"), 5, 2)
         settings_layout.addWidget(self.budget_spin, 5, 3)
         settings_layout.addWidget(QLabel("限定地區（AI 模式）"), 6, 0)
@@ -1169,6 +1213,24 @@ class MainWindow(QMainWindow):
         self.log_list.addItem(text)
         self.log_list.scrollToBottom()
         self.statusBar().showMessage(text)
+
+    def _on_model_preset_selected(self, index: int) -> None:
+        if index <= 0:
+            return
+        model = self.model_combo.currentText()
+        if model:
+            self.keyword_edit.setText(model)
+
+    def _on_add_model_preset(self) -> None:
+        if self.model_combo.currentIndex() <= 0:
+            return
+        model = self.model_combo.currentText()
+        if not model:
+            return
+        current = self.keyword_edit.text().strip()
+        existing = [item.strip() for item in split_filter_values(current) if item.strip()]
+        if model not in existing:
+            self.keyword_edit.setText(f"{current}, {model}" if current else model)
 
     def start_search(self) -> None:
         if self.worker and self.worker.isRunning():

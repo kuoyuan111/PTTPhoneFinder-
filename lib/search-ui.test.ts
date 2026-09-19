@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  appendKeyword,
+  COMMON_IPHONE_MODELS,
   createSearchRequestGate,
+  DEFAULT_KEYWORD,
   DEFAULT_SORT,
   emptyResultsMessage,
   emptySearchView,
@@ -80,5 +83,25 @@ describe("search UI state", () => {
     const searching = searchViewReducer(failed, { type: "start", boardCount: 1 });
     expect(searching.error).toBe("");
     expect(searching.phase).toBe("searching");
+  });
+
+  it("provides default keyword iPhone 17 Pro Max and categorized presets", () => {
+    expect(DEFAULT_KEYWORD).toBe("iPhone 17 Pro Max");
+    expect(COMMON_IPHONE_MODELS.some((g) => g.group.includes("18"))).toBe(true);
+    expect(COMMON_IPHONE_MODELS.some((g) => g.group.includes("17"))).toBe(true);
+    expect(COMMON_IPHONE_MODELS.some((g) => g.group.includes("16"))).toBe(true);
+    expect(COMMON_IPHONE_MODELS.some((g) => g.group.includes("15"))).toBe(true);
+    for (const group of COMMON_IPHONE_MODELS) {
+      for (const model of group.models) {
+        expect(validKeyword(model)).toBe(true);
+      }
+    }
+  });
+
+  it("appends keyword without duplication", () => {
+    expect(appendKeyword("", "iPhone 17 Pro Max")).toBe("iPhone 17 Pro Max");
+    expect(appendKeyword("iPhone 17 Pro Max", "iPhone 16 Pro")).toBe("iPhone 17 Pro Max, iPhone 16 Pro");
+    expect(appendKeyword("iPhone 17 Pro Max, iPhone 16 Pro", "iPhone 17 Pro Max")).toBe("iPhone 17 Pro Max, iPhone 16 Pro");
+    expect(appendKeyword("iPhone 17 Pro Max", "")).toBe("iPhone 17 Pro Max");
   });
 });
